@@ -203,7 +203,15 @@ document.addEventListener('DOMContentLoaded', () => {
     metaFileNameText.textContent = name || file.name;
 
     await new Promise((resolve) => {
-      mainPhoto.onload = resolve;
+      if (mainPhoto.complete && mainPhoto.naturalWidth > 0) {
+        resolve();
+      } else {
+        mainPhoto.onload = resolve;
+        mainPhoto.onerror = () => {
+          showToast('Could not display image format in browser.', 'error');
+          resolve();
+        };
+      }
     });
 
     updateResolutionDisplay();
@@ -255,18 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (enhanceLabel) enhanceLabel.textContent = 'Enhance';
     btnBatchExtract.style.display = 'inline-flex';
 
-    handleFile(file, name);
-  };
-
-  const handleFile = (file, name) => {
     if (!file) return;
-    activeMediaType = 'video';
-    engine.activeMediaType = 'video';
-    currentPhotoFile = null;
-    engine.resetRotation();
-    engine.clearCrop();
-    mainPhoto.style.display = 'none';
-    video.style.display = 'block';
     dropZone.style.display = 'none';
     videoContainer.style.display = 'flex';
     videoMetaBar.style.display = 'flex';
@@ -274,6 +271,19 @@ document.addEventListener('DOMContentLoaded', () => {
     metaFileNameText.textContent = name || file.name;
     engine.loadVideoSource(file, name || file.name);
     showToast(`Loaded ${name || file.name}`);
+  };
+
+  const isImageFile = (file) => {
+    return !!file && (file.type.startsWith('image/') || /\.(png|jpe?g|webp|avif|bmp|tiff?|heic|heif)$/i.test(file.name));
+  };
+
+  const handleMediaFile = async (file, name) => {
+    if (!file) return;
+    if (isImageFile(file)) {
+      await loadPhoto(file, name || file.name);
+    } else {
+      loadVideo(file, name || file.name);
+    }
   };
 
   // Instantiate Media Library Manager (Folder Explorer)
@@ -367,12 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       if (allFiles.length === 1) {
-        const file = allFiles[0];
-        if (file.type.startsWith('video/') || file.name.match(/\.(mp4|webm|mov|mkv|ogg)$/i)) {
-          loadVideo(file, file.name);
-        } else if (file.type.startsWith('image/') || file.name.match(/\.(png|jpe?g|webp|avif|bmp|tiff?)$/i)) {
-          enhancerModal.openImageFile(file);
-        }
+        await handleMediaFile(allFiles[0], allFiles[0].name);
         return;
       }
     }
@@ -384,11 +389,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnToggleMediaLibrary) btnToggleMediaLibrary.style.display = 'inline-flex';
       } else {
         const file = files[0];
-        if (file.type.startsWith('video/') || file.name.match(/\.(mp4|webm|mov|mkv|ogg)$/i)) {
-          loadVideo(file, file.name);
-        } else if (file.type.startsWith('image/') || file.name.match(/\.(png|jpe?g|webp|avif|bmp|tiff?)$/i)) {
-          enhancerModal.openImageFile(file);
-          showToast(`Imported ${file.name} to AI Enhancer`);
+        if (isImageFile(file) || file.type.startsWith('video/') || file.name.match(/\.(mp4|webm|mov|mkv|ogg|avi|m4v)$/i)) {
+          await handleMediaFile(file, file.name);
         } else {
           showToast('Please drop a valid video or image file.', 'warning');
         }
@@ -419,14 +421,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Video File Picker
+  // Unified Media File Picker (Videos & Photos)
   const openFilePicker = () => videoFileInput.click();
   document.getElementById('btnImportVideo').addEventListener('click', openFilePicker);
   document.getElementById('btnDropBrowse').addEventListener('click', openFilePicker);
-  videoFileInput.addEventListener('change', (e) => {
-    if (e.target.files?.length > 0) {
-      handleFile(e.target.files[0]);
+  videoFileInput.addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 1) {
+      await handleMediaFile(files[0]);
+    } else if (files.length > 1) {
+      await mediaLibrary.loadFiles(files, 'Imported Media');
+      if (btnToggleMediaLibrary) btnToggleMediaLibrary.style.display = 'inline-flex';
     }
+    videoFileInput.value = '';
   });
 
   // Direct Image File Picker for AI Enhancer
@@ -437,24 +444,29 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnImportImage) btnImportImage.addEventListener('click', openImagePicker);
   if (btnDropEnhanceImage) btnDropEnhanceImage.addEventListener('click', openImagePicker);
   if (imageFileInput) {
-    imageFileInput.addEventListener('change', (e) => {
-      if (e.target.files?.length > 0) {
-        enhancerModal.openImageFile(e.target.files[0]);
-        imageFileInput.value = '';
+    imageFileInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length === 1) {
+        await loadPhoto(files[0], files[0].name);
+        await enhancerModal.openImageFile(files[0]);
+      } else if (files.length > 1) {
+        await mediaLibrary.loadFiles(files, 'Imported Photos');
+        if (btnToggleMediaLibrary) btnToggleMediaLibrary.style.display = 'inline-flex';
       }
+      imageFileInput.value = '';
     });
   }
 
   // Global Paste Image listener
-  window.addEventListener('paste', (e) => {
+  window.addEventListener('paste', async (e) => {
     const items = e.clipboardData?.items;
     if (items) {
       for (let i = 0; i < items.length; i++) {
         if (items[i].type.startsWith('image/')) {
           const file = items[i].getAsFile();
           if (file) {
-            enhancerModal.openImageFile(file);
-            showToast('Pasted image imported into AI Enhancer Studio!');
+            await loadPhoto(file, 'Pasted Photo ' + new Date().toLocaleTimeString());
+            showToast('Pasted image imported to stage!');
             break;
           }
         }
