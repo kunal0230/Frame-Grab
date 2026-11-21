@@ -76,6 +76,92 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Deblur Angle Compass & Motion Controls */
+.deblur-angle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.deblur-compass-box {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.4);
+}
+
+.deblur-compass-needle {
+  width: 24px;
+  height: 2px;
+  background: var(--accent-cyan);
+  border-radius: 2px;
+  position: relative;
+  transition: transform 0.1s ease-out;
+  box-shadow: 0 0 8px rgba(0, 242, 254, 0.6);
+}
+
+.deblur-compass-needle::after {
+  content: '';
+  position: absolute;
+  right: -3px;
+  top: -3px;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--accent-cyan);
+}
+
+.quick-angle-pills {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.quick-angle-pills button {
+  flex: 1;
+  font-size: 0.68rem;
+  padding: 3px 4px;
+}
+
+.deblur-auto-wrap button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(0, 242, 254, 0.08);
+  border: 1px solid rgba(0, 242, 254, 0.25);
+  color: var(--accent-cyan);
+  font-weight: 600;
+  transition: all var(--transition-fast);
+}
+
+.deblur-auto-wrap button:hover {
+  background: rgba(0, 242, 254, 0.16);
+  border-color: var(--accent-cyan);
+}
+
+.deblur-detect-status {
+  text-align: center;
+}
+
+.detect-badge {
+  display: inline-block;
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

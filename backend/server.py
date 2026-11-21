@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from backend.download_manager import get_installed_models_info, clear_all_models, download_model, is_model_installed
 from backend.models.pipeline import StudioEnhancementPipeline
+from backend.models.deblur import make_motion_psf, estimate_blur_parameters, richardson_lucy_deblur, wiener_deblur
 
 app = FastAPI(title="Frame Grab AI Enhancement Engine", version="2.0.0")
 
@@ -137,6 +138,92 @@ async def enhance_image(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Enhancement error: {str(e)}")
+
+@app.post("/api/deblur/detect")
+async def detect_blur(file: UploadFile = File(...)):
+    """Auto-detects dominant motion blur trajectory (angle in degrees and displacement length in px)"""
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img_bgr is None:
+        raise HTTPException(status_code=400, detail="Invalid image uploaded.")
+
+    params = estimate_blur_parameters(img_bgr)
+    return {
+        "status": "success",
+        "angle": params["angle"],
+        "length": params["length"],
+        "confidence": params["confidence"],
+    }
+
+@app.post("/api/deblur")
+async def deblur_image(
+    file: UploadFile = File(...),
+    angle: float = Form(0.0),
+    length: float = Form(12.0),
+    method: str = Form("richardson_lucy"),  # 'richardson_lucy' or 'wiener'
+    iterations: int = Form(15),
+    damping: float = Form(0.02),
+    snr: float = Form(25.0),
+    auto_detect: bool = Form(False),
+):
+    """
+    Advanced Directional & Motion Blur Deconvolution.
+    Restores blurred frames using regularized Richardson-Lucy or frequency Wiener filters.
+    """
+    start_time = time.time()
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if img_bgr is None:
+        raise HTTPException(status_code=400, detail="Invalid image uploaded.")
+
+    effective_angle = angle
+    effective_length = length
+    detected_conf = 0.0
+
+    if auto_detect:
+        params = estimate_blur_parameters(img_bgr)
+        effective_angle = params["angle"]
+        effective_length = params["length"]
+        detected_conf = params["confidence"]
+
+    try:
+        if method == "wiener":
+            result_bgr = wiener_deblur(img_bgr, length=effective_length, angle_deg=effective_angle, snr=snr)
+            method_label = f"Wiener Deconvolution ({effective_length:.1f}px @ {effective_angle:.1f}°)"
+        else:
+            result_bgr = richardson_lucy_deblur(
+                img_bgr,
+                length=effective_length,
+                angle_deg=effective_angle,
+                iterations=iterations,
+                damping=damping,
+            )
+            method_label = f"Richardson-Lucy Deconvolution ({iterations} iters, {effective_length:.1f}px @ {effective_angle:.1f}°)"
+
+        out_h, out_w = result_bgr.shape[:2]
+        duration_ms = round((time.time() - start_time) * 1000)
+
+        success, encoded_png = cv2.imencode(".png", result_bgr, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to encode deblurred PNG.")
+
+        return Response(
+            content=encoded_png.tobytes(),
+            media_type="image/png",
+            headers={
+                "X-Duration-Ms": str(duration_ms),
+                "X-Model-Used": method_label,
+                "X-Detected-Angle": str(effective_angle),
+                "X-Detected-Length": str(effective_length),
+                "X-Detected-Confidence": str(detected_conf),
+                "X-Output-Resolution": f"{out_w}x{out_h}",
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Deblur error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

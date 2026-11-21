@@ -9,6 +9,7 @@
 
 import { PortraitEnhancer } from './portraitEnhancer.js';
 import { SwinIREnhancer } from './swinIREnhancer.js';
+import { MotionDeblurEngine } from './motionDeblur.js';
 
 export class EnhancerModal {
   constructor({ onSaveToGallery, showToast }) {
@@ -16,6 +17,7 @@ export class EnhancerModal {
     this.showToast = showToast || console.log;
     this.enhancer = new PortraitEnhancer();
     this.swinir = new SwinIREnhancer();
+    this.deblurEngine = MotionDeblurEngine;
 
     this.currentFrame = null;
     this.enhancedResult = null;
@@ -32,6 +34,16 @@ export class EnhancerModal {
       stackMode: 'fast', // 'fast' (~0.8s) vs 'deep' (~2-3m SwinIR)
     };
     this.modelsStorage = null;
+
+    // Deblur Settings
+    this.deblurSettings = {
+      angle: 0,
+      length: 12,
+      method: 'richardson_lucy', // 'richardson_lucy' or 'wiener'
+      iterations: 15,
+      damping: 0.02,
+      snr: 25.0,
+    };
 
     // Current Simplified Mode: 'face_sota' (Default), 'studio_stack', or 'fast_cv'
     this.currentMode = 'face_sota';
@@ -216,6 +228,19 @@ export class EnhancerModal {
                   <p class="mode-desc">Edge-preserving skin softening and shadow lighting balance in your browser without neural network downloads.</p>
                 </div>
 
+                <!-- Mode 4: Motion & Directional Deblur -->
+                <div class="enhancer-mode-card" data-engine-mode="motion_deblur">
+                  <div class="mode-card-badge-row">
+                    <span class="mode-tag-subtle">SHAKE & MOTION BLUR</span>
+                    <span class="mode-speed-tag">GPU / Canvas</span>
+                  </div>
+                  <div class="mode-card-header">
+                    <span class="mode-icon">🎯</span>
+                    <span class="mode-title">Motion & Directional Deblur</span>
+                  </div>
+                  <p class="mode-desc">Deconvolve camera shake and linear directional blur vectors with regularized Richardson-Lucy.</p>
+                </div>
+
               </div>
             </div>
 
@@ -274,6 +299,84 @@ export class EnhancerModal {
                   <button class="preset-pill" data-preset="radiance">✨ Smooth Skin</button>
                 </div>
                 <span class="control-desc" style="margin-top: 6px;">Instant perceptual smoothing and CLAHE shadow lift.</span>
+              </div>
+
+              <!-- Mode 4 Tuning: Motion & Directional Deblur Controls -->
+              <div id="ctrlGroupMotionDeblur" style="display: none;">
+                <!-- Auto-Detect Button -->
+                <div class="deblur-auto-wrap" style="margin-bottom: 12px;">
+                  <button class="btn btn-sm btn-subtle w-full" id="btnAutoDetectBlur" type="button" title="Automatically estimate dominant motion angle and blur displacement">
+                    <span>⚡ Auto-Detect Blur Vector</span>
+                  </button>
+                  <div class="deblur-detect-status" id="deblurDetectStatus" style="display: none; margin-top: 6px;">
+                    <span class="detect-badge" id="deblurDetectBadge">Detected: 15° • 12px</span>
+                  </div>
+                </div>
+
+                <!-- Angle Control with Visual Compass -->
+                <div class="tuning-slider-group">
+                  <div class="slider-info">
+                    <span class="control-name">Blur Direction (Angle)</span>
+                    <span class="control-val" id="valDeblurAngle">0° (Horizontal)</span>
+                  </div>
+                  <div class="deblur-angle-row">
+                    <div class="deblur-compass-box" title="Direction of motion blur">
+                      <div class="deblur-compass-needle" id="deblurCompassNeedle"></div>
+                    </div>
+                    <input type="range" class="studio-range" id="sliderDeblurAngle" min="-90" max="90" value="0" step="1" />
+                  </div>
+                  <div class="quick-angle-pills" id="quickAnglePills">
+                    <button class="btn btn-xxs btn-glass active" data-angle="0" type="button">0° (H)</button>
+                    <button class="btn btn-xxs btn-glass" data-angle="90" type="button">90° (V)</button>
+                    <button class="btn btn-xxs btn-glass" data-angle="45" type="button">45° (/)</button>
+                    <button class="btn btn-xxs btn-glass" data-angle="-45" type="button">-45° (\)</button>
+                  </div>
+                </div>
+
+                <!-- Blur Distance / Length Slider -->
+                <div class="tuning-slider-group" style="margin-top: 14px;">
+                  <div class="slider-info">
+                    <span class="control-name">Blur Length (Distance)</span>
+                    <span class="control-val" id="valDeblurLength">12 px</span>
+                  </div>
+                  <input type="range" class="studio-range" id="sliderDeblurLength" min="2" max="50" value="12" step="1" />
+                  <div class="slider-ticks-row">
+                    <span>Micro (2px)</span>
+                    <span>Moderate (15px)</span>
+                    <span>Heavy (50px)</span>
+                  </div>
+                </div>
+
+                <!-- Algorithm Selector -->
+                <div class="tuning-slider-group" style="margin-top: 14px;">
+                  <div class="slider-info">
+                    <span class="control-name">Restoration Algorithm</span>
+                  </div>
+                  <div class="btn-group w-full" id="deblurMethodBtns" style="display: flex;">
+                    <button class="btn btn-xs btn-glass active flex-1" data-method="richardson_lucy" type="button">Richardson-Lucy</button>
+                    <button class="btn btn-xs btn-glass flex-1" data-method="wiener" type="button">Wiener Filter</button>
+                  </div>
+                  <span class="control-desc" id="lblDeblurMethodDesc" style="margin-top: 5px;">Iterative deconvolution preserving sharp edges without halo ringing.</span>
+                </div>
+
+                <!-- Iterations / Sharpness Slider (for Richardson-Lucy) -->
+                <div class="tuning-slider-group" id="groupDeblurIters" style="margin-top: 14px;">
+                  <div class="slider-info">
+                    <span class="control-name">Iterations (Sharpness)</span>
+                    <span class="control-val" id="valDeblurIters">15 iters</span>
+                  </div>
+                  <input type="range" class="studio-range" id="sliderDeblurIters" min="3" max="35" value="15" step="1" />
+                </div>
+
+                <!-- Halo / Ringing Suppression Slider -->
+                <div class="tuning-slider-group" style="margin-top: 14px;">
+                  <div class="slider-info">
+                    <span class="control-name">Halo & Noise Damping</span>
+                    <span class="control-val" id="valDeblurDamping">20%</span>
+                  </div>
+                  <input type="range" class="studio-range" id="sliderDeblurDamping" min="0" max="100" value="20" step="5" />
+                  <span class="control-desc" style="margin-top: 5px;">Suppresses boundary artifacts and high-frequency noise spikes.</span>
+                </div>
               </div>
             </div>
 
@@ -380,6 +483,7 @@ export class EnhancerModal {
     const ctrlGroupFaceSota = modal.querySelector('#ctrlGroupFaceSota');
     const ctrlGroupStudioStack = modal.querySelector('#ctrlGroupStudioStack');
     const ctrlGroupFastCv = modal.querySelector('#ctrlGroupFastCv');
+    const ctrlGroupMotionDeblur = modal.querySelector('#ctrlGroupMotionDeblur');
     const badgeLabel = modal.querySelector('#badgeEngineLabel');
     const layerTagAfter = modal.querySelector('#layerTagAfter');
 
@@ -394,6 +498,7 @@ export class EnhancerModal {
       ctrlGroupFaceSota.style.display = 'none';
       ctrlGroupStudioStack.style.display = 'none';
       ctrlGroupFastCv.style.display = 'none';
+      if (ctrlGroupMotionDeblur) ctrlGroupMotionDeblur.style.display = 'none';
 
       if (modeKey === 'face_sota') {
         this.activeEngine = 'pytorch';
@@ -416,6 +521,12 @@ export class EnhancerModal {
         ctrlGroupFastCv.style.display = 'block';
         badgeLabel.textContent = 'NATURAL GLOW (INSTANT)';
         layerTagAfter.textContent = '✨ NATURAL GLOW';
+      } else if (modeKey === 'motion_deblur') {
+        this.activeEngine = 'motion_deblur';
+        if (ctrlGroupMotionDeblur) ctrlGroupMotionDeblur.style.display = 'block';
+        badgeLabel.textContent = 'MOTION & DIRECTIONAL DEBLUR';
+        layerTagAfter.textContent = '🎯 MOTION DEBLURRED';
+        this.checkBackendHealth();
       }
 
       this.triggerEnhancement();
@@ -493,6 +604,171 @@ export class EnhancerModal {
         }
       });
     });
+
+    // Deblur Controls
+    const sliderDeblurAngle = modal.querySelector('#sliderDeblurAngle');
+    const valDeblurAngle = modal.querySelector('#valDeblurAngle');
+    const needle = modal.querySelector('#deblurCompassNeedle');
+    const sliderDeblurLength = modal.querySelector('#sliderDeblurLength');
+    const valDeblurLength = modal.querySelector('#valDeblurLength');
+    const sliderDeblurIters = modal.querySelector('#sliderDeblurIters');
+    const valDeblurIters = modal.querySelector('#valDeblurIters');
+    const sliderDeblurDamping = modal.querySelector('#sliderDeblurDamping');
+    const valDeblurDamping = modal.querySelector('#valDeblurDamping');
+    const btnAutoDetectBlur = modal.querySelector('#btnAutoDetectBlur');
+    const deblurDetectStatus = modal.querySelector('#deblurDetectStatus');
+    const deblurDetectBadge = modal.querySelector('#deblurDetectBadge');
+
+    const updateCompass = (deg) => {
+      if (needle) needle.style.transform = `rotate(${deg}deg)`;
+    };
+
+    if (sliderDeblurAngle) {
+      sliderDeblurAngle.addEventListener('input', (e) => {
+        const deg = parseFloat(e.target.value);
+        this.deblurSettings.angle = deg;
+        if (valDeblurAngle) valDeblurAngle.textContent = `${deg}°`;
+        updateCompass(deg);
+        modal.querySelectorAll('#quickAnglePills button').forEach((b) => {
+          b.classList.toggle('active', parseFloat(b.dataset.angle) === deg);
+        });
+        this.scheduleEnhancement();
+      });
+    }
+
+    modal.querySelectorAll('#quickAnglePills button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        modal.querySelectorAll('#quickAnglePills button').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        const deg = parseFloat(btn.dataset.angle);
+        this.deblurSettings.angle = deg;
+        if (sliderDeblurAngle) sliderDeblurAngle.value = deg;
+        if (valDeblurAngle) valDeblurAngle.textContent = `${deg}°`;
+        updateCompass(deg);
+        this.scheduleEnhancement();
+      });
+    });
+
+    if (sliderDeblurLength) {
+      sliderDeblurLength.addEventListener('input', (e) => {
+        const len = parseFloat(e.target.value);
+        this.deblurSettings.length = len;
+        if (valDeblurLength) valDeblurLength.textContent = `${len} px`;
+        this.scheduleEnhancement();
+      });
+    }
+
+    modal.querySelectorAll('#deblurMethodBtns button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        modal.querySelectorAll('#deblurMethodBtns button').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        const method = btn.dataset.method;
+        this.deblurSettings.method = method;
+        const groupIters = modal.querySelector('#groupDeblurIters');
+        const desc = modal.querySelector('#lblDeblurMethodDesc');
+        if (groupIters) groupIters.style.display = method === 'richardson_lucy' ? 'block' : 'none';
+        if (desc) {
+          desc.textContent =
+            method === 'richardson_lucy'
+              ? 'Iterative deconvolution preserving sharp edges without halo ringing.'
+              : 'Instant frequency-domain Wiener filter with noise regularization.';
+        }
+        this.scheduleEnhancement();
+      });
+    });
+
+    if (sliderDeblurIters) {
+      sliderDeblurIters.addEventListener('input', (e) => {
+        const it = parseInt(e.target.value, 10);
+        this.deblurSettings.iterations = it;
+        if (valDeblurIters) valDeblurIters.textContent = `${it} iters`;
+        this.scheduleEnhancement();
+      });
+    }
+
+    if (sliderDeblurDamping) {
+      sliderDeblurDamping.addEventListener('input', (e) => {
+        const pct = parseInt(e.target.value, 10);
+        this.deblurSettings.damping = pct / 1000.0;
+        if (valDeblurDamping) valDeblurDamping.textContent = `${pct}%`;
+        this.scheduleEnhancement();
+      });
+    }
+
+    if (btnAutoDetectBlur) {
+      btnAutoDetectBlur.addEventListener('click', async () => {
+        if (!this.currentFrame) return;
+        btnAutoDetectBlur.disabled = true;
+        btnAutoDetectBlur.innerHTML = '<span>⚡ Estimating Blur Trajectory...</span>';
+
+        try {
+          let detectedAngle = 0;
+          let detectedLength = 12;
+          let detectedConf = 0.8;
+
+          if (this.backendOnline) {
+            let blob = this.currentFrame.blob;
+            if (!blob) {
+              const resp = await fetch(this.currentFrame.url);
+              blob = await resp.blob();
+            }
+            const fd = new FormData();
+            fd.append('file', blob, 'frame.png');
+            const apiResp = await fetch(`${this.backendBaseUrl}/api/deblur/detect`, {
+              method: 'POST',
+              body: fd,
+            });
+            if (apiResp.ok) {
+              const data = await apiResp.json();
+              detectedAngle = data.angle;
+              detectedLength = data.length;
+              detectedConf = data.confidence;
+            }
+          } else {
+            // In-browser estimate
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            await new Promise((r) => {
+              img.onload = r;
+              img.src = this.currentFrame.url;
+            });
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth;
+            c.height = img.naturalHeight;
+            const cx = c.getContext('2d');
+            cx.drawImage(img, 0, 0);
+            const imgData = cx.getImageData(0, 0, c.width, c.height);
+            const res = MotionDeblurEngine.estimateBlur(imgData);
+            detectedAngle = res.angle;
+            detectedLength = res.length;
+            detectedConf = res.confidence;
+          }
+
+          this.deblurSettings.angle = detectedAngle;
+          this.deblurSettings.length = detectedLength;
+
+          if (sliderDeblurAngle) sliderDeblurAngle.value = detectedAngle;
+          if (valDeblurAngle) valDeblurAngle.textContent = `${detectedAngle}°`;
+          updateCompass(detectedAngle);
+          if (sliderDeblurLength) sliderDeblurLength.value = detectedLength;
+          if (valDeblurLength) valDeblurLength.textContent = `${detectedLength} px`;
+
+          if (deblurDetectStatus && deblurDetectBadge) {
+            deblurDetectStatus.style.display = 'block';
+            deblurDetectBadge.textContent = `Auto-Detected: ${detectedAngle}° • ${detectedLength}px (${Math.round(detectedConf * 100)}% conf)`;
+          }
+
+          this.showToast(`⚡ Auto-detected motion blur: ${detectedAngle}° at ${detectedLength}px`);
+          this.triggerEnhancement();
+        } catch (err) {
+          console.error(err);
+          this.showToast('Auto-detection error: ' + err.message, 'warning');
+        } finally {
+          btnAutoDetectBlur.disabled = false;
+          btnAutoDetectBlur.innerHTML = '<span>⚡ Auto-Detect Blur Vector</span>';
+        }
+      });
+    }
 
     // Toggle Advanced Accordion
     const btnToggleAdvanced = modal.querySelector('#btnToggleAdvanced');
@@ -977,7 +1253,107 @@ export class EnhancerModal {
 
     try {
       let res;
-      if (this.activeEngine === 'pytorch') {
+      if (this.currentMode === 'motion_deblur') {
+        const methodTitle = this.deblurSettings.method === 'wiener' ? 'Wiener' : 'Richardson-Lucy';
+        loaderText.textContent = `Deconvolving ${methodTitle} motion blur (${this.deblurSettings.length}px @ ${this.deblurSettings.angle}°)...`;
+
+        if (this.backendOnline) {
+          let blob = this.currentFrame.blob;
+          if (!blob) {
+            const resp = await fetch(this.currentFrame.url);
+            blob = await resp.blob();
+          }
+
+          const formData = new FormData();
+          formData.append('file', blob, 'frame.png');
+          formData.append('angle', this.deblurSettings.angle);
+          formData.append('length', this.deblurSettings.length);
+          formData.append('method', this.deblurSettings.method);
+          formData.append('iterations', this.deblurSettings.iterations);
+          formData.append('damping', this.deblurSettings.damping);
+
+          const startTime = performance.now();
+          const apiResp = await fetch(`${this.backendBaseUrl}/api/deblur`, {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!apiResp.ok) {
+            const errData = await apiResp.json().catch(() => ({}));
+            throw new Error(errData.detail || `Server error (${apiResp.status})`);
+          }
+
+          const durationHeader = apiResp.headers.get('X-Duration-Ms');
+          const modelHeader = apiResp.headers.get('X-Model-Used') || 'Motion Deblur';
+
+          const outBlob = await apiResp.blob();
+          const outUrl = URL.createObjectURL(outBlob);
+
+          const img = new Image();
+          await new Promise((resolve) => {
+            img.onload = resolve;
+            img.src = outUrl;
+          });
+
+          const elapsed = durationHeader ? parseInt(durationHeader, 10) : Math.round(performance.now() - startTime);
+
+          res = {
+            blob: outBlob,
+            url: outUrl,
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+            stats: {
+              durationMs: elapsed,
+              facesDetected: 'N/A',
+              model: modelHeader,
+              device: 'Apple M5 GPU',
+            },
+          };
+
+          this.modal.querySelector('#statDuration').textContent = `${elapsed}ms`;
+          this.modal.querySelector('#statSkin').textContent = `Blur: ${this.deblurSettings.angle}° • ${this.deblurSettings.length}px`;
+          this.modal.querySelector('#statRes').textContent = `${img.naturalWidth} × ${img.naturalHeight} • Apple M5`;
+        } else {
+          // In-browser client fallback
+          const startTime = performance.now();
+          const canvas = document.createElement('canvas');
+          canvas.width = tempImg.naturalWidth;
+          canvas.height = tempImg.naturalHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(tempImg, 0, 0);
+
+          const srcData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const deblurredData = MotionDeblurEngine.deblurRichardsonLucy(
+            srcData,
+            this.deblurSettings.length,
+            this.deblurSettings.angle,
+            this.deblurSettings.iterations,
+            this.deblurSettings.damping
+          );
+
+          ctx.putImageData(deblurredData, 0, 0);
+          const outBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+          const outUrl = URL.createObjectURL(outBlob);
+          const elapsed = Math.round(performance.now() - startTime);
+
+          res = {
+            blob: outBlob,
+            url: outUrl,
+            width: canvas.width,
+            height: canvas.height,
+            stats: {
+              durationMs: elapsed,
+              facesDetected: 'N/A',
+              model: `In-Browser Deblur (${this.deblurSettings.length}px @ ${this.deblurSettings.angle}°)`,
+              device: 'Web Browser',
+            },
+          };
+
+          this.modal.querySelector('#statDuration').textContent = `${elapsed}ms`;
+          this.modal.querySelector('#statSkin').textContent = `Blur: ${this.deblurSettings.angle}° • ${this.deblurSettings.length}px`;
+          this.modal.querySelector('#statRes').textContent = `${canvas.width} × ${canvas.height} • Browser`;
+        }
+      } else if (this.activeEngine === 'pytorch') {
         if (!this.backendOnline) {
           const isOnline = await this.checkBackendHealth();
           if (!isOnline) {
