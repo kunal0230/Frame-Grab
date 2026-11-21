@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frame Grab — Lossless Video Frame Extractor</title>
+    <meta name="description" content="Web-based, frame-by-frame video navigation and 100% lossless photo extraction directly in your browser." />
+    <!-- Google Fonts: Outfit & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app" class="app-container">
+      <!-- Top Navigation / Studio Bar -->
+      <header class="studio-header">
+        <div class="header-brand">
+          <div class="brand-logo">
+            <svg class="aperture-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="14.31" y1="8" x2="20.05" y2="17.94"></line>
+              <line x1="9.69" y1="8" x2="21.17" y2="8"></line>
+              <line x1="7.38" y1="12" x2="13.12" y2="2.06"></line>
+              <line x1="9.69" y1="16" x2="3.95" y2="6.06"></line>
+              <line x1="14.31" y1="16" x2="2.83" y2="16"></line>
+              <line x1="16.62" y1="12" x2="10.88" y2="21.94"></line>
+            </svg>
+            <span class="brand-name">FRAME<span class="text-accent">GRAB</span></span>
+          </div>
+          <span class="badge badge-lossless">LOSSLESS 100%</span>
+        </div>
+
+        <!-- Video Metadata Badges (populated when video loaded) -->
+        <div class="video-meta-bar" id="videoMetaBar" style="display: none;">
+          <div class="meta-item" title="Video Name" id="metaFileName">
+            <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
+            <span class="meta-text text-truncate" id="metaFileNameText">video.mp4</span>
+          </div>
+          <div class="meta-divider"></div>
+          <div class="meta-item" title="Native Pixel Resolution">
+            <span class="meta-label">RES:</span>
+            <span class="meta-val" id="metaResolution">1920 × 1080</span>
+          </div>
+          <div class="meta-divider"></div>
+          <div class="meta-item" title="FPS (Frames Per Second)">
+            <span class="meta-label">FPS:</span>
+            <select id="fpsSelect" class="studio-select" title="Change or override video framerate">
+              <option value="auto">Auto-detecting...</option>
+              <option value="23.976">23.976 fps</option>
+              <option value="24">24 fps (Cinema)</option>
+              <option value="25">25 fps (PAL)</option>
+              <option value="29.97">29.97 fps (NTSC)</option>
+              <option value="30" selected>30 fps</option>
+              <option value="50">50 fps</option>
+              <option value="59.94">59.94 fps</option>
+              <option value="60">60 fps</option>
+              <option value="120">120 fps</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Header Actions -->
+        <div class="header-actions">
+          <input type="file" id="videoFileInput" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mkv,.mov" style="display: none;" />
+          <input type="file" id="imageFileInput" accept="image/png,image/jpeg,image/webp,image/avif,image/bmp,image/tiff" style="display: none;" />
+          <input type="file" id="folderFileInput" webkitdirectory directory multiple style="display: none;" />
+          <button class="btn btn-secondary" id="btnImportFolder" title="Import Entire Folder of Videos & Photos">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+            <span>📁 Open Folder</span>
+          </button>
+          <button class="btn btn-secondary" id="btnImportVideo" title="Import Single Video File (Ctrl/Cmd+O)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Import Video</span>
+          </button>
+          <button class="btn btn-outline" id="btnImportImage" title="Directly Import Image to SOTA AI Enhancer Studio">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>
+            <span>✨ Enhance Photo</span>
+          </button>
+          <button class="btn btn-secondary btn-playlist-toggle" id="btnToggleMediaLibrary" title="Toggle Folder Media Library" style="display: none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+            <span>Folder Media</span>
+            <span class="badge badge-counter" id="mediaLibraryCountBadge">0</span>
+          </button>
+          <button class="btn btn-icon" id="btnShortcuts" title="Keyboard Shortcuts (?)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </button>
+          <button class="btn btn-icon" id="btnSettings" title="Export Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          <button class="btn btn-secondary btn-gallery-toggle" id="btnToggleGallery" title="Toggle Captures Drawer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+            <span>Captures</span>
+            <span class="badge badge-counter" id="galleryCountBadge">0</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Body: Media Drawer (Left) + Viewer Stage (Center) + Gallery Drawer (Right) -->
+      <main class="main-content">
+        <!-- Left: Media Library Drawer (Folder Explorer) -->
+        <aside class="media-drawer collapsed" id="mediaDrawer">
+          <div class="media-drawer-header">
+            <div class="media-title-wrap">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+              <h3 class="media-title" id="mediaFolderTitle">Folder Media</h3>
+              <span class="badge badge-accent" id="mediaCountBadge">0</span>
+            </div>
+            <button class="btn btn-icon btn-ghost btn-xs" id="btnCloseMediaDrawer" title="Collapse Library">✕</button>
+          </div>
+
+          <!-- Filter Tabs -->
+          <div class="media-filter-bar">
+            <button class="filter-pill active" data-filter="all" id="filterAll">All <span class="filter-count" id="countAll">0</span></button>
+            <button class="filter-pill" data-filter="videos" id="filterVideos">🎬 Videos <span class="filter-count" id="countVideos">0</span></button>
+            <button class="filter-pill" data-filter="photos" id="filterPhotos">🖼️ Photos <span class="filter-count" id="countPhotos">0</span></button>
+          </div>
+
+          <!-- Search / Quick Filter Input -->
+          <div class="media-search-wrap">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="mediaSearchInput" class="media-search-input" placeholder="Search folder media..." />
+          </div>
+
+          <!-- List of Media Items -->
+          <div class="media-body" id="mediaList">
+            <div class="media-empty" id="mediaEmpty">
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+              <p class="empty-title">No Folder Loaded</p>
+              <p class="empty-hint">Click <strong>Open Folder</strong> to import all videos and photos at once</p>
+            </div>
+          </div>
+
+          <!-- Media Drawer Footer with Prev / Next Navigation -->
+          <div class="media-drawer-footer">
+            <button class="btn btn-xs btn-glass" id="btnPrevMedia" title="Previous Media (Alt + Left)">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+              <span>Prev</span>
+            </button>
+            <span class="media-footer-status" id="mediaNavIndex">0 / 0</span>
+            <button class="btn btn-xs btn-glass" id="btnNextMedia" title="Next Media (Alt + Right)">
+              <span>Next</span>
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+        </aside>
+
+        <!-- Center Stage Area -->
+        <section class="viewer-stage" id="viewerStage">
+          <!-- Drop Zone Overlay (Shown when no video loaded) -->
+          <div class="drop-zone" id="dropZone">
+            <div class="drop-zone-card">
+              <div class="drop-icon-pulse">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+                  <path d="M12 12v9"/>
+                  <path d="m16 16-4-4-4 4"/>
+                </svg>
+              </div>
+              <h2 class="drop-title">Import Video or Folder for Frame Extraction</h2>
+              <p class="drop-subtitle">Drag and drop any folder, video, or photo directly into the studio</p>
+              <div class="drop-actions">
+                <button class="btn btn-primary btn-lg" id="btnDropFolder">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                  <span>📁 Open Media Folder</span>
+                </button>
+                <button class="btn btn-secondary btn-lg" id="btnDropBrowse">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span>Select Video</span>
+                </button>
+                <button class="btn btn-outline btn-lg" id="btnDropEnhanceImage">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>
+                  <span>✨ Enhance Photo</span>
+                </button>
+                <button class="btn btn-ghost btn-lg" id="btnDropPortraitDemo" title="Load sample portrait video to test face enhancement">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m12 6 4 6-4 6-4-6z"/></svg>
+                  <span>Portrait Demo</span>
+                </button>
+                <button class="btn btn-ghost btn-lg" id="btnDropDemo" title="Load 60 FPS motion benchmark video">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  <span>60 FPS Demo</span>
+                </button>
+              </div>
+              <div class="drop-features">
+                <div class="feature-item">
+                  <span class="check-icon">✓</span> 100% Lossless PNG Export
+                </div>
+                <div class="feature-item">
+                  <span class="check-icon">✓</span> Native 4K & 8K Resolution
+                </div>
+                <div class="feature-item">
+                  <span class="check-icon">✓</span> Private & Offline (No Upload)
+                </div>
+                <div class="feature-item">
+                  <span class="check-icon">✓</span> Micro-precision Stepping
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Video Display Container -->
+          <div class="video-container" id="videoContainer" style="display: none;">
+            <div class="video-viewport" id="videoViewport">
+              <video id="mainVideo" playsinline preload="auto"></video>
+              <img id="mainPhoto" class="stage-photo-display" style="display: none;" alt="Active Photo" />
+              
+              <!-- Zoom & Pan Indicator Badge -->
+              <div class="zoom-level-badge" id="zoomBadge" style="display: none;">
+                Fit (100%)
+              </div>
+
+              <!-- Interactive Crop Overlay -->
+              <div class="crop-overlay" id="cropOverlay" style="display: none;">
+                <div class="crop-scrim scrim-top" id="cropScrimTop"></div>
+                <div class="crop-scrim scrim-bottom" id="cropScrimBottom"></div>
+                <div class="crop-scrim scrim-left" id="cropScrimLeft"></div>
+                <div class="crop-scrim scrim-right" id="cropScrimRight"></div>
+
+                <div class="crop-box" id="cropBox">
+                  <div class="crop-grid-line grid-v-1"></div>
+                  <div class="crop-grid-line grid-v-2"></div>
+                  <div class="crop-grid-line grid-h-1"></div>
+                  <div class="crop-grid-line grid-h-2"></div>
+
+                  <div class="crop-handle handle-nw" data-handle="nw"></div>
+                  <div class="crop-handle handle-ne" data-handle="ne"></div>
+                  <div class="crop-handle handle-se" data-handle="se"></div>
+                  <div class="crop-handle handle-sw" data-handle="sw"></div>
+                  <div class="crop-handle handle-n" data-handle="n"></div>
+                  <div class="crop-handle handle-s" data-handle="s"></div>
+                  <div class="crop-handle handle-e" data-handle="e"></div>
+                  <div class="crop-handle handle-w" data-handle="w"></div>
+
+                  <div class="crop-dims-badge" id="cropDimsBadge">1920 × 1080 px</div>
+                </div>
+              </div>
+
+              <!-- Toast / Quick Flash Notification -->
+              <div class="stage-toast" id="stageToast"></div>
+            </div>
+
+            <!-- Viewport Overlay Toolbar (Zoom, Fit, Rotate, Crop) -->
+            <div class="viewport-toolbar">
+              <div class="btn-group">
+                <button class="btn btn-xs btn-glass active" id="btnZoomFit" title="Fit to Screen">Fit</button>
+                <button class="btn btn-xs btn-glass" id="btnZoom100" title="100% 1:1 Pixel Native View">100%</button>
+                <button class="btn btn-xs btn-glass" id="btnZoom200" title="200% Zoom">200%</button>
+                <button class="btn btn-xs btn-glass" id="btnZoom400" title="400% Zoom Loupe">400%</button>
+              </div>
+
+              <!-- Rotate & Flip Group -->
+              <div class="btn-group">
+                <button class="btn btn-xs btn-glass" id="btnRotateCCW" title="Rotate 90° Counter-Clockwise (Shift + R)">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
+                  <span>↺ 90°</span>
+                </button>
+                <button class="btn btn-xs btn-glass" id="btnRotateCW" title="Rotate 90° Clockwise (Key: R)">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><polyline points="21 3 21 8 16 8"/></svg>
+                  <span>↻ 90°</span>
+                </button>
+                <button class="btn btn-xs btn-glass" id="btnFlipH" title="Flip Horizontal (Mirror)">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="m16 3-4 8-5-5-5 15h20L16 3z" stroke-dasharray="2 2"/></svg>
+                  <span>⇄ Flip</span>
+                </button>
+                <button class="btn btn-xs btn-glass text-warning" id="btnResetRotate" title="Reset Rotation & Flip" style="display: none;">
+                  <span>Reset</span>
+                </button>
+              </div>
+
+              <!-- Interactive Crop Group -->
+              <div class="btn-group">
+                <button class="btn btn-xs btn-glass" id="btnToggleCrop" title="Interactive Crop Tool (Key: X)">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>
+                  <span id="btnCropLabel">✂️ Crop</span>
+                  <span class="crop-active-dot" id="cropActiveDot" style="display: none;"></span>
+                </button>
+              </div>
+
+              <div class="toolbar-hint" id="panHint" style="display: none;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="hint-icon"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
+                <span>Click & drag to pan</span>
+              </div>
+            </div>
+
+            <!-- Floating Crop Control Bar (Active when Crop Mode is on) -->
+            <div class="crop-control-bar" id="cropControlBar" style="display: none;">
+              <span class="crop-bar-label">ASPECT:</span>
+              <div class="crop-ratio-group">
+                <button class="btn btn-xs btn-ratio active" data-ratio="free">Free</button>
+                <button class="btn btn-xs btn-ratio" data-ratio="1:1">1:1</button>
+                <button class="btn btn-xs btn-ratio" data-ratio="9:16">9:16</button>
+                <button class="btn btn-xs btn-ratio" data-ratio="16:9">16:9</button>
+                <button class="btn btn-xs btn-ratio" data-ratio="4:5">4:5</button>
+                <button class="btn btn-xs btn-ratio" data-ratio="4:3">4:3</button>
+              </div>
+              <div class="crop-bar-divider"></div>
+              <button class="btn btn-xs btn-primary" id="btnApplyCrop" title="Apply Crop Region">
+                <span>✓ Apply</span>
+              </button>
+              <button class="btn btn-xs btn-ghost text-danger" id="btnClearCrop" title="Clear Crop and Reset to Full Frame">
+                <span>✕ Clear</span>
+              </button>
+              <button class="btn btn-xs btn-ghost" id="btnCloseCrop" title="Close Crop Mode (Esc)">
+                <span>Done</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Gallery Drawer (Right Side) -->
+        <aside class="gallery-drawer collapsed" id="galleryDrawer">
+          <div class="gallery-header">
+            <div class="gallery-title-wrap">
+              <h3 class="gallery-title">Captured Frames</h3>
+              <span class="badge badge-accent" id="drawerCountBadge">0</span>
+            </div>
+            <div class="gallery-header-actions">
+              <button class="btn btn-xs btn-outline" id="btnDownloadAllZip" title="Download all captured frames as a ZIP archive" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>ZIP All</span>
+              </button>
+              <button class="btn btn-xs btn-ghost text-danger" id="btnClearGallery" title="Clear all captures" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="gallery-body" id="galleryList">
+            <!-- Empty state -->
+            <div class="gallery-empty" id="galleryEmpty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+              <p class="empty-title">No frames captured yet</p>
+              <p class="empty-hint">Pause at any frame and click <kbd>Capture</kbd> or press <kbd>C</kbd></p>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <!-- Bottom Studio Console: Timecodes, Scrubber, Transport & Actions -->
+      <footer class="studio-console" id="studioConsole">
+        <!-- Timecode & Frame Stats Bar -->
+        <div class="console-stats-bar">
+          <div class="timecode-display-group">
+            <div class="timecode-box" title="SMPTE Timecode (Hours : Minutes : Seconds : Frames)">
+              <span class="stat-label">SMPTE</span>
+              <span class="timecode-val" id="tcDisplay">00:00:00:00</span>
+            </div>
+            <div class="timecode-box" title="Exact Current Frame Index / Total Frames">
+              <span class="stat-label">FRAME</span>
+              <span class="frame-val"><span id="frameCurrent">0</span> <span class="text-muted">/</span> <span id="frameTotal">0</span></span>
+            </div>
+            <div class="timecode-box" title="Time Elapsed / Total Duration">
+              <span class="stat-label">TIME</span>
+              <span class="time-sec-val"><span id="timeCurrent">00:00.000</span> <span class="text-muted">/</span> <span id="timeTotal">00:00.000</span></span>
+            </div>
+          </div>
+
+          <!-- In / Out Range Indicators -->
+          <div class="range-status-group" id="rangeStatusGroup">
+            <div class="range-badge" id="rangeBadgeIn" title="Mark In Point">
+              <span class="range-label">IN:</span>
+              <span id="rangeInText">--:--:--:--</span>
+            </div>
+            <div class="range-badge" id="rangeBadgeOut" title="Mark Out Point">
+              <span class="range-label">OUT:</span>
+              <span id="rangeOutText">--:--:--:--</span>
+            </div>
+            <button class="btn btn-xs btn-ghost" id="btnClearRange" title="Clear Range" style="display: none;">✕</button>
+          </div>
+        </div>
+
+        <!-- High-Precision Timeline Scrubber -->
+        <div class="timeline-container">
+          <div class="timeline-track" id="timelineTrack">
+            <div class="timeline-buffer" id="timelineBuffer"></div>
+            <div class="timeline-range-highlight" id="timelineRange"></div>
+            <div class="timeline-progress" id="timelineProgress"></div>
+            <div class="timeline-playhead" id="timelinePlayhead">
+              <div class="playhead-handle"></div>
+              <div class="playhead-line"></div>
+            </div>
+            <div class="timeline-marker marker-in" id="markerIn" style="display: none;"></div>
+            <div class="timeline-marker marker-out" id="markerOut" style="display: none;"></div>
+            <div class="timeline-hover-indicator" id="timelineHover">
+              <span class="hover-time" id="timelineHoverText">00:00:00:00</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Master Transport & Extraction Action Bar -->
+        <div class="console-actions-bar">
+          <!-- Left: Range & In/Out Tools -->
+          <div class="transport-subgroup">
+            <button class="btn btn-sm btn-subtle" id="btnMarkIn" title="Mark In Point ([ or I)">
+              <span class="key-badge">[</span>
+              <span>Mark In</span>
+            </button>
+            <button class="btn btn-sm btn-subtle" id="btnMarkOut" title="Mark Out Point (] or O)">
+              <span class="key-badge">]</span>
+              <span>Mark Out</span>
+            </button>
+          </div>
+
+          <!-- Center: Transport Stepping Controls -->
+          <div class="transport-center">
+            <button class="btn btn-icon btn-transport" id="btnJumpStart" title="Jump to Start (Home)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+            </button>
+            <button class="btn btn-icon btn-transport" id="btnStepBack10" title="Step -10 Frames (Shift + Left)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg>
+            </button>
+            <button class="btn btn-icon btn-transport btn-step" id="btnStepBack1" title="Step -1 Frame (Left Arrow)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="15 18 9 12 15 6 15 18"/></svg>
+            </button>
+
+            <!-- Master Play / Pause Button -->
+            <button class="btn btn-icon btn-play-pause" id="btnPlayPause" title="Play / Pause (Space)">
+              <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <svg id="pauseIcon" viewBox="0 0 24 24" fill="currentColor" style="display: none;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+
+            <button class="btn btn-icon btn-transport btn-step" id="btnStepForward1" title="Step +1 Frame (Right Arrow)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="9 18 15 12 9 6 9 18"/></svg>
+            </button>
+            <button class="btn btn-icon btn-transport" id="btnStepForward10" title="Step +10 Frames (Shift + Right)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg>
+            </button>
+            <button class="btn btn-icon btn-transport" id="btnJumpEnd" title="Jump to End (End)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+            </button>
+
+            <!-- Speed Selector -->
+            <div class="speed-selector-wrap">
+              <select id="speedSelect" class="studio-select studio-select-sm" title="Playback Speed">
+                <option value="0.1">0.1x</option>
+                <option value="0.25">0.25x</option>
+                <option value="0.5">0.5x</option>
+                <option value="1" selected>1.0x</option>
+                <option value="2">2.0x</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Right: Hero Extraction Actions -->
+          <div class="transport-actions">
+            <!-- Copy Frame -->
+            <button class="btn btn-subtle" id="btnCopyFrame" title="Copy Current Frame to Clipboard (Lossless PNG)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              <span>Copy</span>
+            </button>
+
+            <!-- Batch Extract Range -->
+            <button class="btn btn-subtle" id="btnBatchExtract" title="Batch Extract Frames within In/Out Range">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h.01M7 12h.01M7 17h.01M12 7h5M12 12h5M12 17h5"/></svg>
+              <span>Batch Extract</span>
+            </button>
+
+            <!-- Grab & Enhance Button -->
+            <button class="btn btn-subtle" id="btnGrabAndEnhance" title="Grab Frame & Open Portrait Enhancement Studio (Shift + E)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+              <span>Grab & Enhance</span>
+            </button>
+
+            <!-- Hero Capture Button -->
+            <button class="btn btn-primary btn-capture-hero" id="btnCaptureFrame" title="Grab Lossless Frame (Key: C)">
+              <svg class="camera-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
+                <circle cx="12" cy="13" r="3"/>
+              </svg>
+              <span>GRAB FRAME</span>
+              <span class="key-pill">C</span>
+            </button>
+          </div>
+        </div>
+      </footer>
+
+      <!-- Modals -->
+      <!-- 1. Shortcuts Modal -->
+      <div class="modal-backdrop" id="modalShortcuts" style="display: none;">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Keyboard Shortcuts</h3>
+            <button class="modal-close" id="btnCloseShortcuts">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="shortcuts-grid">
+              <div class="shortcut-row"><span class="shortcut-desc">Play / Pause</span> <kbd>Space</kbd> or <kbd>K</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Step -1 Frame</span> <kbd>←</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Step +1 Frame</span> <kbd>→</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Step -10 Frames</span> <kbd>Shift</kbd> + <kbd>←</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Step +10 Frames</span> <kbd>Shift</kbd> + <kbd>→</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Shuttle Play / Reverse</span> <kbd>J</kbd> / <kbd>L</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Grab Lossless Frame</span> <kbd>C</kbd> or <kbd>E</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Copy to Clipboard</span> <kbd>Cmd/Ctrl</kbd> + <kbd>C</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Mark In Point</span> <kbd>[</kbd> or <kbd>I</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Mark Out Point</span> <kbd>]</kbd> or <kbd>O</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Jump to Start / End</span> <kbd>Home</kbd> / <kbd>End</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Zoom Fit / 100%</span> <kbd>Z</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Rotate 90° CW / CCW</span> <kbd>R</kbd> / <kbd>Shift</kbd> + <kbd>R</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Toggle Crop Tool</span> <kbd>X</kbd></div>
+              <div class="shortcut-row"><span class="shortcut-desc">Next / Prev Folder Media</span> <kbd>Alt</kbd> + <kbd>↓</kbd> / <kbd>↑</kbd></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Settings Modal -->
+      <div class="modal-backdrop" id="modalSettings" style="display: none;">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Extraction Settings</h3>
+            <button class="modal-close" id="btnCloseSettings">✕</button>
+          </div>
+          <div class="modal-body settings-form">
+            <div class="form-group">
+              <label for="settingImageFormat">Image Format</label>
+              <select id="settingImageFormat" class="studio-select full-width">
+                <option value="png" selected>PNG — 100% Lossless (Recommended)</option>
+                <option value="webp">WebP — Lossless Compression (Smaller file)</option>
+                <option value="jpeg">JPEG — High Quality (98%)</option>
+              </select>
+              <span class="field-hint">PNG guarantees original uncompressed RGB color bit-depth.</span>
+            </div>
+
+            <div class="form-group">
+              <label for="settingFilenamePattern">Filename Template</label>
+              <input type="text" id="settingFilenamePattern" class="studio-input full-width" value="{name}_frame_{frame}_{timecode}" />
+              <span class="field-hint">Available tags: <code>{name}</code>, <code>{frame}</code>, <code>{timecode}</code>, <code>{timestamp}</code></span>
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="settingAutoDownload" checked />
+                <span>Automatically trigger download on frame grab</span>
+              </label>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-primary" id="btnSaveSettings">Save Preferences</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Batch Extraction Modal -->
+      <div class="modal-backdrop" id="modalBatch" style="display: none;">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Batch Frame Extraction</h3>
+            <button class="modal-close" id="btnCloseBatch">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="batch-intro">Extract frames from selected range into a single <strong>ZIP archive</strong>.</p>
+            
+            <div class="batch-range-summary">
+              <div class="range-col">
+                <span class="col-title">Start (In):</span>
+                <span class="col-val" id="batchRangeIn">00:00:00:00</span>
+              </div>
+              <div class="range-arrow">➜</div>
+              <div class="range-col">
+                <span class="col-title">End (Out):</span>
+                <span class="col-val" id="batchRangeOut">00:00:00:00</span>
+              </div>
+            </div>
+
+            <div class="form-group mt-3">
+              <label for="batchIntervalSelect">Extraction Frequency</label>
+              <select id="batchIntervalSelect" class="studio-select full-width">
+                <option value="1">Every Frame (Full sequence)</option>
+                <option value="2">Every 2nd Frame</option>
+                <option value="5">Every 5th Frame</option>
+                <option value="10">Every 10th Frame</option>
+                <option value="fps">Every 1 Second (at 1 fps)</option>
+                <option value="half_sec">Every 0.5 Seconds</option>
+              </select>
+            </div>
+
+            <div class="batch-estimate" id="batchEstimate">
+              Estimated frames: <strong id="batchEstimatedCount">0</strong>
+            </div>
+
+            <!-- Batch AI Enhancement Option -->
+            <div class="form-group mt-3">
+              <label class="checkbox-label">
+                <input type="checkbox" id="batchSettingEnhance" />
+                <span>✨ Apply AI Portrait Enhancement to all frames</span>
+              </label>
+              <span class="field-hint" style="margin-left: 24px;">Runs skin-preserving smoothing, eye clarity & CLAHE dynamic lighting.</span>
+            </div>
+
+            <!-- Progress Bar during extraction -->
+            <div class="batch-progress-box" id="batchProgressBox" style="display: none;">
+              <div class="progress-bar-wrap">
+                <div class="progress-bar-fill" id="batchProgressBar" style="width: 0%;"></div>
+              </div>
+              <div class="progress-status-text">
+                <span id="batchProgressText">Processing frames...</span>
+                <span id="batchProgressPercent">0%</span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" id="btnCancelBatch">Cancel</button>
+            <button class="btn btn-primary" id="btnStartBatch">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Start Extraction & ZIP</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Fullscreen Frame Inspector Modal -->
+      <div class="modal-backdrop modal-inspect" id="modalInspect" style="display: none;">
+        <div class="inspect-view-wrap">
+          <div class="inspect-header">
+            <div class="inspect-info">
+              <span class="inspect-title" id="inspectTitle">Frame Inspection</span>
+              <span class="badge badge-accent" id="inspectMeta">1920 × 1080 • PNG</span>
+            </div>
+            <div class="inspect-actions">
+              <button class="btn btn-sm btn-primary" id="btnInspectEnhance">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+                <span>Enhance Portrait</span>
+              </button>
+              <button class="btn btn-sm btn-outline" id="btnInspectDownload">Download PNG</button>
+              <button class="btn btn-sm btn-outline" id="btnInspectCopy">Copy</button>
+              <button class="btn btn-icon btn-ghost" id="btnCloseInspect">✕</button>
+            </div>
+          </div>
+          <div class="inspect-stage">
+            <button class="inspect-nav-btn btn-prev" id="btnInspectPrev" title="Previous Frame (←)">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <img id="inspectImage" alt="Captured Lossless Frame" />
+            <button class="inspect-nav-btn btn-next" id="btnInspectNext" title="Next Frame (→)">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hidden canvas for lossless native pixel extraction -->
+      <canvas id="offscreenExtractCanvas" style="display: none;"></canvas>
+    </div>
+
+    <!-- App Scripts -->
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
