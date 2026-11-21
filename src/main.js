@@ -98,6 +98,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnZoom100 = document.getElementById('btnZoom100');
   const btnZoom200 = document.getElementById('btnZoom200');
   const btnZoom400 = document.getElementById('btnZoom400');
+  const btnZoom800 = document.getElementById('btnZoom800');
+  const btnZoom1600 = document.getElementById('btnZoom1600');
   const zoomBadge = document.getElementById('zoomBadge');
   const panHint = document.getElementById('panHint');
 
@@ -939,29 +941,64 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Zoom Controls
+  const allZoomBtns = [btnZoomFit, btnZoom100, btnZoom200, btnZoom400, btnZoom800, btnZoom1600].filter(Boolean);
+
   const setZoomLevel = (lvl) => {
     engine.setZoom(lvl);
-    [btnZoomFit, btnZoom100, btnZoom200, btnZoom400].forEach((b) => b.classList.remove('active'));
+    allZoomBtns.forEach((b) => b.classList.remove('active'));
 
     if (lvl === 'fit') {
-      btnZoomFit.classList.add('active');
+      btnZoomFit?.classList.add('active');
       zoomBadge.style.display = 'none';
       panHint.style.display = 'none';
+      viewport.classList.remove('high-zoom');
     } else {
-      if (lvl === 1) btnZoom100.classList.add('active');
-      else if (lvl === 2) btnZoom200.classList.add('active');
-      else if (lvl === 4) btnZoom400.classList.add('active');
+      const num = typeof lvl === 'number' ? lvl : parseFloat(lvl) || 1;
+      if (num === 1) btnZoom100?.classList.add('active');
+      else if (num === 2) btnZoom200?.classList.add('active');
+      else if (num === 4) btnZoom400?.classList.add('active');
+      else if (num === 8) btnZoom800?.classList.add('active');
+      else if (num === 16) btnZoom1600?.classList.add('active');
+
+      if (num >= 4) {
+        viewport.classList.add('high-zoom');
+      } else {
+        viewport.classList.remove('high-zoom');
+      }
 
       zoomBadge.style.display = 'block';
-      zoomBadge.textContent = `${lvl * 100}% Zoom`;
+      zoomBadge.textContent = `${Math.round(num * 100)}% Zoom`;
       panHint.style.display = 'flex';
     }
   };
 
-  btnZoomFit.addEventListener('click', () => setZoomLevel('fit'));
-  btnZoom100.addEventListener('click', () => setZoomLevel(1));
-  btnZoom200.addEventListener('click', () => setZoomLevel(2));
-  btnZoom400.addEventListener('click', () => setZoomLevel(4));
+  btnZoomFit?.addEventListener('click', () => setZoomLevel('fit'));
+  btnZoom100?.addEventListener('click', () => setZoomLevel(1));
+  btnZoom200?.addEventListener('click', () => setZoomLevel(2));
+  btnZoom400?.addEventListener('click', () => setZoomLevel(4));
+  btnZoom800?.addEventListener('click', () => setZoomLevel(8));
+  btnZoom1600?.addEventListener('click', () => setZoomLevel(16));
+
+  engine.on('zoomchange', (lvl) => {
+    if (lvl !== 'fit') {
+      const num = typeof lvl === 'number' ? lvl : parseFloat(lvl) || 1;
+      zoomBadge.style.display = 'block';
+      zoomBadge.textContent = `${Math.round(num * 100)}% Zoom`;
+      panHint.style.display = 'flex';
+      allZoomBtns.forEach((b) => b.classList.remove('active'));
+      if (num === 1) btnZoom100?.classList.add('active');
+      else if (num === 2) btnZoom200?.classList.add('active');
+      else if (num === 4) btnZoom400?.classList.add('active');
+      else if (num === 8) btnZoom800?.classList.add('active');
+      else if (num === 16) btnZoom1600?.classList.add('active');
+
+      if (num >= 4) {
+        viewport.classList.add('high-zoom');
+      } else {
+        viewport.classList.remove('high-zoom');
+      }
+    }
+  });
 
   // Gallery Drawer Toggle & Actions
   btnToggleGallery.addEventListener('click', () => {

@@ -608,6 +608,13 @@ html, body {
   transition: transform 0.1s ease-out;
 }
 
+.video-viewport.high-zoom video,
+.video-viewport.high-zoom img {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
 .video-viewport.panning {
   cursor: grab;
 }

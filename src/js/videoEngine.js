@@ -358,17 +358,18 @@ export class VideoEngine {
       }
     });
 
-    // Mousewheel zoom
+    // Mousewheel zoom (Ctrl/Cmd + Wheel) up to 32x (3200%)
     this.viewport.addEventListener('wheel', (e) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
-        const delta = e.deltaY < 0 ? 0.2 : -0.2;
         let currentScale = typeof this.zoomLevel === 'number' ? this.zoomLevel : 1.0;
-        let newScale = Math.min(6, Math.max(1, currentScale + delta));
-        if (newScale <= 1.05) {
+        const step = currentScale >= 8 ? 1.0 : (currentScale >= 4 ? 0.5 : 0.25);
+        const delta = e.deltaY < 0 ? step : -step;
+        let newScale = Math.min(32, Math.max(0.5, currentScale + delta));
+        if (newScale <= 1.05 && delta < 0) {
           this.setZoom('fit');
         } else {
-          this.setZoom(newScale);
+          this.setZoom(Math.round(newScale * 10) / 10);
         }
       }
     }, { passive: false });
