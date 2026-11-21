@@ -4,6 +4,8 @@ FastAPI backend powered by PyTorch (MPS) for CodeFormer, SwinIR, and Studio Stac
 """
 import io
 import time
+import uuid
+from typing import Optional
 import cv2
 import numpy as np
 import torch
@@ -24,7 +26,41 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Session Frame Cache (holds recent frames in memory so slider tweaks don't re-upload full frames)
+FRAME_CACHE: dict[str, dict] = {}
+MAX_CACHED_FRAMES = 8
+
+async def get_or_cache_frame(frame_id: Optional[str], file: Optional[UploadFile]) -> tuple[np.ndarray, str]:
+    """Retrieves an existing cached frame or decodes and caches an uploaded frame."""
+    global FRAME_CACHE
+    if frame_id and frame_id in FRAME_CACHE:
+        entry = FRAME_CACHE[frame_id]
+        entry["timestamp"] = time.time()
+        return entry["img_bgr"], frame_id
+
+    if file is None:
+        raise HTTPException(status_code=400, detail="Missing frame: neither valid frame_id nor file provided.")
+
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img_bgr is None:
+        raise HTTPException(status_code=400, detail="Invalid image file uploaded.")
+
+    # Evict oldest if cache limit reached
+    if len(FRAME_CACHE) >= MAX_CACHED_FRAMES:
+        oldest_id = min(FRAME_CACHE.keys(), key=lambda k: FRAME_CACHE[k]["timestamp"])
+        del FRAME_CACHE[oldest_id]
+
+    new_id = uuid.uuid4().hex[:12]
+    FRAME_CACHE[new_id] = {
+        "img_bgr": img_bgr,
+        "timestamp": time.time(),
+    }
+    return img_bgr, new_id
 
 # Global pipeline instance
 pipeline = None
@@ -140,17 +176,17 @@ async def enhance_image(
         raise HTTPException(status_code=500, detail=f"Enhancement error: {str(e)}")
 
 @app.post("/api/deblur/detect")
-async def detect_blur(file: UploadFile = File(...)):
-    """Auto-detects dominant motion blur trajectory (angle in degrees and displacement length in px)"""
-    contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
-    img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if img_bgr is None:
-        raise HTTPException(status_code=400, detail="Invalid image uploaded.")
+async def detect_blur(
+    file: Optional[UploadFile] = File(None),
+    frame_id: Optional[str] = Form(None),
+):
+    """Auto-detects dominant motion blur trajectory (angle in degrees and displacement length in px). Supports session frame caching."""
+    img_bgr, active_frame_id = await get_or_cache_frame(frame_id, file)
 
     params = estimate_blur_parameters(img_bgr)
     return {
         "status": "success",
+        "frame_id": active_frame_id,
         "angle": params["angle"],
         "length": params["length"],
         "confidence": params["confidence"],
@@ -158,7 +194,8 @@ async def detect_blur(file: UploadFile = File(...)):
 
 @app.post("/api/deblur")
 async def deblur_image(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    frame_id: Optional[str] = Form(None),
     angle: float = Form(0.0),
     length: float = Form(12.0),
     method: str = Form("richardson_lucy"),  # 'richardson_lucy' or 'wiener'
@@ -170,14 +207,10 @@ async def deblur_image(
     """
     Advanced Directional & Motion Blur Deconvolution.
     Restores blurred frames using regularized Richardson-Lucy or frequency Wiener filters.
+    Supports in-memory session frame caching via frame_id to avoid redundant multi-megabyte uploads on slider drags.
     """
     start_time = time.time()
-    contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
-    img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-    if img_bgr is None:
-        raise HTTPException(status_code=400, detail="Invalid image uploaded.")
+    img_bgr, active_frame_id = await get_or_cache_frame(frame_id, file)
 
     effective_angle = angle
     effective_length = length
@@ -214,6 +247,7 @@ async def deblur_image(
             content=encoded_png.tobytes(),
             media_type="image/png",
             headers={
+                "X-Frame-Id": active_frame_id,
                 "X-Duration-Ms": str(duration_ms),
                 "X-Model-Used": method_label,
                 "X-Detected-Angle": str(effective_angle),

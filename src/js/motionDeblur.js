@@ -147,40 +147,39 @@ export class MotionDeblurEngine {
       }
     }
 
-    // Sweep angles from -90 to +90 in 3-degree steps
-    let minVar = Infinity;
-    let maxVar = -Infinity;
-    let bestAngle = 0;
+    // Compute 2x2 Structure Tensor components (second raw directional moments):
+    // Jxx = sum(Gx^2), Jyy = sum(Gy^2), Jxy = sum(Gx * Gy)
+    let jxx = 0.0;
+    let jyy = 0.0;
+    let jxy = 0.0;
+    let count = 0;
 
-    for (let a = -90; a <= 90; a += 3) {
-      const rad = (a * Math.PI) / 180.0;
-      const cosA = Math.cos(rad);
-      const sinA = Math.sin(rad);
-
-      let sumSq = 0.0;
-      let count = 0;
-
-      // Sample middle region
-      for (let y = 2; y < dh - 2; y += 2) {
-        for (let x = 2; x < dw - 2; x += 2) {
-          const idx = y * dw + x;
-          const da = gx[idx] * cosA + gy[idx] * sinA;
-          sumSq += da * da;
-          count++;
-        }
-      }
-
-      const variance = sumSq / Math.max(count, 1);
-      if (variance < minVar) {
-        minVar = variance;
-        bestAngle = a;
-      }
-      if (variance > maxVar) {
-        maxVar = variance;
+    for (let y = 2; y < dh - 2; y += 2) {
+      for (let x = 2; x < dw - 2; x += 2) {
+        const idx = y * dw + x;
+        const dx = gx[idx];
+        const dy = gy[idx];
+        jxx += dx * dx;
+        jyy += dy * dy;
+        jxy += dx * dy;
+        count++;
       }
     }
 
-    // Estimate length using horizontal derivative autocorrelation after rotation
+    // Exact closed-form angle minimizing directional gradient variance/energy:
+    // theta* = 0.5 * atan2(-2 * Jxy, Jyy - Jxx)
+    const angleRad = 0.5 * Math.atan2(-2.0 * jxy, jyy - jxx);
+    const bestAngle = Math.round((angleRad * 180.0) / Math.PI);
+
+    // Structure Tensor eigenvalues for anisotropy / confidence
+    // lambda1,2 = (Jxx + Jyy +/- sqrt((Jxx - Jyy)^2 + 4 * Jxy^2)) / 2
+    const trace = jxx + jyy + 1e-6;
+    const diff = jxx - jyy;
+    const disc = Math.sqrt(diff * diff + 4.0 * jxy * jxy);
+    const coherence = disc / trace;
+    const confidence = Math.min(0.95, Math.max(0.25, Math.round(coherence * 1.6 * 100) / 100));
+
+    // Estimate displacement length using horizontal derivative autocorrelation after rotation
     const radB = (bestAngle * Math.PI) / 180.0;
     const cosB = Math.cos(radB);
     const sinB = Math.sin(radB);
@@ -221,6 +220,8 @@ export class MotionDeblurEngine {
     let estimatedLen = 10;
     if (sampleRows > 0) {
       for (let l = 0; l < maxLag; l++) autocorr[l] /= sampleRows;
+      // The spatial derivative of a boxcar PSF consists of two opposite impulses delta(x + L/2) - delta(x - L/2).
+      // Its autocorrelation yields a distinct negative local minimum at lag tau = +/- L.
       for (let l = 2; l < maxLag - 2; l++) {
         if (autocorr[l] < autocorr[l - 1] && autocorr[l] < autocorr[l + 1]) {
           estimatedLen = l;
@@ -229,13 +230,13 @@ export class MotionDeblurEngine {
       }
     }
 
+    // Explicit linear resolution rescaling: L_full = L_thumb * (W_full / W_thumb) = L_thumb / scale
     const finalLength = Math.max(3, Math.min(50, Math.round(estimatedLen / scale)));
-    const contrast = maxVar > 0 ? (maxVar - minVar) / maxVar : 0.5;
 
     return {
       angle: bestAngle,
       length: finalLength,
-      confidence: Math.min(0.95, Math.max(0.3, Math.round(contrast * 100) / 100)),
+      confidence: confidence,
     };
   }
 
@@ -324,3 +325,4 @@ export class MotionDeblurEngine {
     return new ImageData(outData, width, height);
   }
 }
+

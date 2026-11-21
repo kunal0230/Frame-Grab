@@ -27,6 +27,7 @@ export class EnhancerModal {
     // Backend GPU settings (Apple M5 MPS)
     this.backendBaseUrl = 'http://localhost:8000';
     this.backendOnline = false;
+    this.cachedFrameId = null;
     this.pytorchSettings = {
       model: 'codeformer', // 'codeformer', 'studio_stack', 'swinir'
       fidelity: 0.6,
@@ -707,13 +708,18 @@ export class EnhancerModal {
           let detectedConf = 0.8;
 
           if (this.backendOnline) {
-            let blob = this.currentFrame.blob;
-            if (!blob) {
-              const resp = await fetch(this.currentFrame.url);
-              blob = await resp.blob();
-            }
             const fd = new FormData();
-            fd.append('file', blob, 'frame.png');
+            if (this.cachedFrameId) {
+              fd.append('frame_id', this.cachedFrameId);
+            } else {
+              let blob = this.currentFrame.blob;
+              if (!blob) {
+                const resp = await fetch(this.currentFrame.url);
+                blob = await resp.blob();
+              }
+              fd.append('file', blob, 'frame.png');
+            }
+
             const apiResp = await fetch(`${this.backendBaseUrl}/api/deblur/detect`, {
               method: 'POST',
               body: fd,
@@ -723,6 +729,9 @@ export class EnhancerModal {
               detectedAngle = data.angle;
               detectedLength = data.length;
               detectedConf = data.confidence;
+              if (data.frame_id) {
+                this.cachedFrameId = data.frame_id;
+              }
             }
           } else {
             // In-browser estimate
@@ -1191,6 +1200,9 @@ export class EnhancerModal {
   }
 
   async open(frameData) {
+    if (this.currentFrame !== frameData) {
+      this.cachedFrameId = null;
+    }
     this.currentFrame = frameData;
     const titleLabel = frameData.title || (typeof frameData.frameNumber === 'number' ? `Frame #${frameData.frameNumber}` : (frameData.frameNumber || 'Photo'));
     this.modal.querySelector('#enhancerFrameTitle').textContent = `Enhancement Studio — ${titleLabel}`;
@@ -1258,25 +1270,40 @@ export class EnhancerModal {
         loaderText.textContent = `Deconvolving ${methodTitle} motion blur (${this.deblurSettings.length}px @ ${this.deblurSettings.angle}°)...`;
 
         if (this.backendOnline) {
-          let blob = this.currentFrame.blob;
-          if (!blob) {
-            const resp = await fetch(this.currentFrame.url);
-            blob = await resp.blob();
-          }
-
-          const formData = new FormData();
-          formData.append('file', blob, 'frame.png');
-          formData.append('angle', this.deblurSettings.angle);
-          formData.append('length', this.deblurSettings.length);
-          formData.append('method', this.deblurSettings.method);
-          formData.append('iterations', this.deblurSettings.iterations);
-          formData.append('damping', this.deblurSettings.damping);
+          const makeFormData = async (forceUpload = false) => {
+            const formData = new FormData();
+            if (!forceUpload && this.cachedFrameId) {
+              formData.append('frame_id', this.cachedFrameId);
+            } else {
+              let blob = this.currentFrame.blob;
+              if (!blob) {
+                const resp = await fetch(this.currentFrame.url);
+                blob = await resp.blob();
+              }
+              formData.append('file', blob, 'frame.png');
+            }
+            formData.append('angle', this.deblurSettings.angle);
+            formData.append('length', this.deblurSettings.length);
+            formData.append('method', this.deblurSettings.method);
+            formData.append('iterations', this.deblurSettings.iterations);
+            formData.append('damping', this.deblurSettings.damping);
+            return formData;
+          };
 
           const startTime = performance.now();
-          const apiResp = await fetch(`${this.backendBaseUrl}/api/deblur`, {
+          let apiResp = await fetch(`${this.backendBaseUrl}/api/deblur`, {
             method: 'POST',
-            body: formData,
+            body: await makeFormData(false),
           });
+
+          // Cache miss recovery: retry with full upload
+          if (!apiResp.ok && this.cachedFrameId) {
+            this.cachedFrameId = null;
+            apiResp = await fetch(`${this.backendBaseUrl}/api/deblur`, {
+              method: 'POST',
+              body: await makeFormData(true),
+            });
+          }
 
           if (!apiResp.ok) {
             const errData = await apiResp.json().catch(() => ({}));
@@ -1285,6 +1312,8 @@ export class EnhancerModal {
 
           const durationHeader = apiResp.headers.get('X-Duration-Ms');
           const modelHeader = apiResp.headers.get('X-Model-Used') || 'Motion Deblur';
+          const newFrameId = apiResp.headers.get('X-Frame-Id');
+          if (newFrameId) this.cachedFrameId = newFrameId;
 
           const outBlob = await apiResp.blob();
           const outUrl = URL.createObjectURL(outBlob);
