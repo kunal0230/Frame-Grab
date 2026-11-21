@@ -3,6 +3,69 @@
  * Imports, organizes, and switches between all photos and videos in a selected directory.
  */
 
+/**
+ * Fallback to parse date & time from camera or screenshot filenames
+ * e.g. 2026-11-16-10.24.681.mp4, VID_20261116_102430.mp4, Screenshot 2026-11-16 at 10.24.30.png
+ */
+function parseDateFromFilename(name) {
+  if (!name) return null;
+  // Pattern 1: YYYY-MM-DD or YYYY.MM.DD or YYYY_MM_DD followed optionally by HH.MM.SS / HH-MM-SS / HH:MM:SS
+  const m1 = name.match(/(\d{4})[-_. ](\d{2})[-_. ](\d{2})(?:[-_. T](\d{2})[-_.:](\d{2})(?:[-_.:](\d{2}))?)?/);
+  if (m1) {
+    const y = parseInt(m1[1], 10);
+    const mo = parseInt(m1[2], 10) - 1;
+    const d = parseInt(m1[3], 10);
+    const h = m1[4] ? parseInt(m1[4], 10) : 0;
+    const mi = m1[5] ? parseInt(m1[5], 10) : 0;
+    const s = m1[6] ? parseInt(m1[6], 10) : 0;
+    if (y >= 1990 && y <= 2099 && mo >= 0 && mo <= 11 && d >= 1 && d <= 31) {
+      const parsed = new Date(y, mo, d, h, mi, s);
+      if (!isNaN(parsed.getTime())) return parsed.getTime();
+    }
+  }
+  // Pattern 2: YYYYMMDD[_T]HHMMSS (standard mobile camera format)
+  const m2 = name.match(/(\d{4})(\d{2})(\d{2})[-_T](\d{2})(\d{2})(\d{2})/);
+  if (m2) {
+    const y = parseInt(m2[1], 10);
+    const mo = parseInt(m2[2], 10) - 1;
+    const d = parseInt(m2[3], 10);
+    const h = parseInt(m2[4], 10);
+    const mi = parseInt(m2[5], 10);
+    const s = parseInt(m2[6], 10);
+    if (y >= 1990 && y <= 2099 && mo >= 0 && mo <= 11 && d >= 1 && d <= 31) {
+      const parsed = new Date(y, mo, d, h, mi, s);
+      if (!isNaN(parsed.getTime())) return parsed.getTime();
+    }
+  }
+  return null;
+}
+
+/**
+ * Format timestamp into concise, readable date and time
+ * e.g. "Nov 16, 10:24 AM" or "Nov 16, 2025, 10:24 AM"
+ */
+function formatDateTime(timestamp) {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
+
+  const datePart = d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+
+  const timePart = d.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  return `${datePart}, ${timePart}`;
+}
+
 export class MediaLibraryManager {
   constructor({
     drawerElement,
@@ -31,6 +94,7 @@ export class MediaLibraryManager {
     this.selectedIndex = -1;
     this.currentFilter = 'all'; // 'all' | 'videos' | 'photos'
     this.searchQuery = '';
+    this.currentSort = 'date-desc'; // 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'size-desc' | 'size-asc'
 
     this.initDOM();
   }
@@ -54,6 +118,17 @@ export class MediaLibraryManager {
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
         this.searchQuery = e.target.value.trim().toLowerCase();
+        this.applyFilterAndRender();
+      });
+    }
+
+    // Sort selector
+    const sortSelect = this.drawer.querySelector('#mediaSortSelect');
+    if (sortSelect) {
+      this.sortSelect = sortSelect;
+      sortSelect.value = this.currentSort;
+      sortSelect.addEventListener('change', (e) => {
+        this.currentSort = e.target.value;
         this.applyFilterAndRender();
       });
     }
@@ -89,6 +164,7 @@ export class MediaLibraryManager {
       if (isVideo || isPhoto) {
         const type = isVideo ? 'video' : 'photo';
         const url = URL.createObjectURL(file);
+        const lastModified = file.lastModified || parseDateFromFilename(file.name) || Date.now();
         parsedItems.push({
           id: 'item_' + Date.now() + '_' + i,
           file,
@@ -96,6 +172,8 @@ export class MediaLibraryManager {
           relativePath: file.webkitRelativePath || file.name,
           type,
           sizeBytes: file.size,
+          lastModified,
+          formattedDate: formatDateTime(lastModified),
           url,
           loadedMetadata: null,
         });
@@ -106,9 +184,6 @@ export class MediaLibraryManager {
       this.showToast('No supported videos or photos found in this folder.', 'warning');
       return;
     }
-
-    // Sort alphabetically by name
-    parsedItems.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
     // Clean up old URLs
     this.items.forEach((item) => {
@@ -161,8 +236,30 @@ export class MediaLibraryManager {
     if (countPhotos) countPhotos.textContent = photoCount;
   }
 
+  sortItems(items) {
+    const list = [...items];
+    switch (this.currentSort) {
+      case 'date-desc':
+        return list.sort((a, b) => b.lastModified - a.lastModified);
+      case 'date-asc':
+        return list.sort((a, b) => a.lastModified - b.lastModified);
+      case 'name-asc':
+        return list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+      case 'name-desc':
+        return list.sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: 'base' }));
+      case 'size-desc':
+        return list.sort((a, b) => b.sizeBytes - a.sizeBytes);
+      case 'size-asc':
+        return list.sort((a, b) => a.sizeBytes - b.sizeBytes);
+      default:
+        return list;
+    }
+  }
+
   applyFilterAndRender() {
-    this.filteredItems = this.items.filter((item) => {
+    const activeItem = this.filteredItems[this.selectedIndex] || null;
+
+    const filtered = this.items.filter((item) => {
       // Filter by type
       if (this.currentFilter === 'videos' && item.type !== 'video') return false;
       if (this.currentFilter === 'photos' && item.type !== 'photo') return false;
@@ -173,6 +270,16 @@ export class MediaLibraryManager {
       }
       return true;
     });
+
+    this.filteredItems = this.sortItems(filtered);
+
+    // Maintain selection on the active item if it still exists
+    if (activeItem) {
+      const newIdx = this.filteredItems.findIndex((it) => it.id === activeItem.id);
+      this.selectedIndex = newIdx !== -1 ? newIdx : (this.filteredItems.length > 0 ? 0 : -1);
+    } else {
+      this.selectedIndex = this.filteredItems.length > 0 ? 0 : -1;
+    }
 
     this.renderList();
     this.updateNavIndex();
@@ -199,6 +306,7 @@ export class MediaLibraryManager {
 
       const sizeMb = (item.sizeBytes / (1024 * 1024)).toFixed(1);
       const isVideo = item.type === 'video';
+      const fullDateStr = new Date(item.lastModified).toLocaleString();
 
       card.innerHTML = `
         <div class="media-item-icon ${item.type}">
@@ -213,6 +321,8 @@ export class MediaLibraryManager {
           <div class="media-item-meta">
             <span class="media-tag ${item.type}">${item.type.toUpperCase()}</span>
             <span class="media-size">${sizeMb} MB</span>
+            <span class="media-meta-dot">•</span>
+            <span class="media-date" title="${fullDateStr}">${item.formattedDate}</span>
           </div>
         </div>
       `;
