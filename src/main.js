@@ -8,7 +8,6 @@ import { VideoEngine } from './js/videoEngine.js';
 import { FrameExtractor } from './js/frameExtractor.js';
 import { GalleryManager } from './js/gallery.js';
 import { ShortcutsManager } from './js/shortcuts.js';
-import { createDemoVideoBlob } from './js/demoVideo.js';
 import { EnhancerModal } from './js/enhancerModal.js';
 import { MediaLibraryManager } from './js/mediaLibrary.js';
 import { CropController } from './js/cropController.js';
@@ -23,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const videoFileInput = document.getElementById('videoFileInput');
   const folderFileInput = document.getElementById('folderFileInput');
   const mainPhoto = document.getElementById('mainPhoto');
+  const studioConsole = document.getElementById('studioConsole');
   const btnImportFolder = document.getElementById('btnImportFolder');
   const btnDropFolder = document.getElementById('btnDropFolder');
   const btnToggleMediaLibrary = document.getElementById('btnToggleMediaLibrary');
@@ -199,6 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
     dropZone.style.display = 'none';
     videoContainer.style.display = 'flex';
     videoMetaBar.style.display = 'flex';
+    if (studioConsole) studioConsole.style.display = 'flex';
     metaFileNameText.textContent = name || file.name;
 
     await new Promise((resolve) => {
@@ -208,11 +209,18 @@ document.addEventListener('DOMContentLoaded', () => {
     updateResolutionDisplay();
     fpsSelect.parentElement.style.opacity = '0.35';
 
-    // Adapt action buttons for photo
+    // Adapt action controls for static photo
+    const timelineContainer = document.querySelector('.timeline-container');
+    if (timelineContainer) timelineContainer.style.display = 'none';
+    const transportCenter = document.querySelector('.transport-center');
+    if (transportCenter) transportCenter.style.display = 'none';
+    const transportSubgroup = document.querySelector('.transport-subgroup');
+    if (transportSubgroup) transportSubgroup.style.display = 'none';
+
     const captureLabel = btnCaptureFrame.querySelector('span:not(.key-pill)');
-    if (captureLabel) captureLabel.textContent = 'SAVE PHOTO';
+    if (captureLabel) captureLabel.textContent = 'Save Photo';
     const enhanceLabel = btnGrabAndEnhance.querySelector('span');
-    if (enhanceLabel) enhanceLabel.textContent = '✨ Enhance Photo';
+    if (enhanceLabel) enhanceLabel.textContent = 'Enhance Photo';
     btnBatchExtract.style.display = 'none';
 
     tcDisplay.textContent = 'PHOTO';
@@ -233,11 +241,18 @@ document.addEventListener('DOMContentLoaded', () => {
     video.style.display = 'block';
     fpsSelect.parentElement.style.opacity = '1';
 
-    // Reset buttons for video
+    // Restore controls for video
+    const timelineContainer = document.querySelector('.timeline-container');
+    if (timelineContainer) timelineContainer.style.display = 'block';
+    const transportCenter = document.querySelector('.transport-center');
+    if (transportCenter) transportCenter.style.display = 'flex';
+    const transportSubgroup = document.querySelector('.transport-subgroup');
+    if (transportSubgroup) transportSubgroup.style.display = 'flex';
+
     const captureLabel = btnCaptureFrame.querySelector('span:not(.key-pill)');
-    if (captureLabel) captureLabel.textContent = 'GRAB FRAME';
+    if (captureLabel) captureLabel.textContent = 'Capture Frame';
     const enhanceLabel = btnGrabAndEnhance.querySelector('span');
-    if (enhanceLabel) enhanceLabel.textContent = 'Grab & Enhance';
+    if (enhanceLabel) enhanceLabel.textContent = 'Enhance';
     btnBatchExtract.style.display = 'inline-flex';
 
     handleFile(file, name);
@@ -255,6 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
     dropZone.style.display = 'none';
     videoContainer.style.display = 'flex';
     videoMetaBar.style.display = 'flex';
+    if (studioConsole) studioConsole.style.display = 'flex';
     metaFileNameText.textContent = name || file.name;
     engine.loadVideoSource(file, name || file.name);
     showToast(`Loaded ${name || file.name}`);
@@ -445,57 +461,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   });
-
-  // Demo Video Loaders
-  const loadPortraitDemo = async () => {
-    showToast('Generating Studio Portrait demo reel in memory...');
-    dropZone.style.display = 'none';
-    videoContainer.style.display = 'flex';
-    videoMetaBar.style.display = 'flex';
-    metaFileNameText.textContent = 'portrait_studio_subject.webm';
-
-    try {
-      const demoBlob = await createDemoVideoBlob('portrait');
-      engine.loadVideoSource(demoBlob, 'portrait_studio_subject.webm');
-      fpsSelect.value = '30';
-      engine.setFps(30);
-      showToast('Portrait subject video loaded! Ready to extract & enhance.');
-    } catch (err) {
-      console.error(err);
-      showToast('Portrait demo generation failed: ' + err.message, 'error');
-    }
-  };
-
-  const loadBenchmarkDemo = async () => {
-    showToast('Generating 60 FPS benchmark reel...');
-    dropZone.style.display = 'none';
-    videoContainer.style.display = 'flex';
-    videoMetaBar.style.display = 'flex';
-    metaFileNameText.textContent = '60fps_benchmark_reel.webm';
-
-    try {
-      const demoBlob = await createDemoVideoBlob('benchmark');
-      engine.loadVideoSource(demoBlob, '60fps_benchmark_reel.webm');
-      fpsSelect.value = '60';
-      engine.setFps(60);
-      showToast('Demo video loaded at 60 FPS!');
-    } catch (err) {
-      console.error(err);
-      showToast('Demo video generation failed: ' + err.message, 'error');
-    }
-  };
-
-  const btnPortraitDemo = document.getElementById('btnPortraitDemo');
-  if (btnPortraitDemo) btnPortraitDemo.addEventListener('click', loadPortraitDemo);
-
-  const btnDropPortraitDemo = document.getElementById('btnDropPortraitDemo');
-  if (btnDropPortraitDemo) btnDropPortraitDemo.addEventListener('click', loadPortraitDemo);
-
-  const btnDemoVideo = document.getElementById('btnDemoVideo');
-  if (btnDemoVideo) btnDemoVideo.addEventListener('click', loadBenchmarkDemo);
-
-  const btnDropDemo = document.getElementById('btnDropDemo');
-  if (btnDropDemo) btnDropDemo.addEventListener('click', loadBenchmarkDemo);
 
   // Resolution & Transform State Display
   const updateResolutionDisplay = () => {
@@ -770,7 +735,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (!video.videoWidth) {
-      showToast('Please import a video or click Demo Video first.', 'warning');
+      showToast('Please import a video first.', 'warning');
       return;
     }
     try {
@@ -803,7 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (!video.videoWidth) {
-      showToast('Please import a video or click Demo Video first.', 'warning');
+      showToast('Please import a video first.', 'warning');
       return;
     }
     try {
@@ -831,7 +796,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (!video.videoWidth) {
-      showToast('Please import a video or click Demo Video first.', 'warning');
+      showToast('Please import a video first.', 'warning');
       return;
     }
     try {
