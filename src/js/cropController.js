@@ -1,7 +1,9 @@
 /**
  * Frame Grab — Crop Controller
  * High-precision interactive visual crop overlay with 8 resize handles,
- * live aspect ratio presets (Free, 1:1, 9:16, 16:9, 4:5, 4:3), and pixel dimension readout.
+ * live aspect ratio presets (Free, 1:1, 9:16, 16:9, 4:5, 4:3),
+ * fixed-anchor resizing mathematics, pixel dimension readout,
+ * and live on-stage framing preview.
  */
 
 export class CropController {
@@ -23,12 +25,13 @@ export class CropController {
     this.showToast = showToast || console.log;
 
     this.isActive = false;
+    this.isFramingMode = false;
     this.activeRatio = 'free'; // 'free', '1:1', '9:16', '16:9', '4:5', '4:3'
     this.cropBoxRect = { left: 0, top: 0, width: 0, height: 0 };
     this.mediaBounds = { left: 0, top: 0, width: 0, height: 0 };
 
     this.isDragging = false;
-    this.dragMode = null; // 'move' or handle name: 'nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w'
+    this.dragMode = null; // 'move' or 'nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w'
     this.dragStart = { x: 0, y: 0 };
     this.boxStart = { left: 0, top: 0, width: 0, height: 0 };
 
@@ -74,16 +77,28 @@ export class CropController {
 
     // Drag move on cropBox body
     this.cropBox.addEventListener('mousedown', (e) => {
+      if (this.isFramingMode) {
+        this.setFramingMode(false);
+        return;
+      }
       if (e.target.classList.contains('crop-handle')) return;
       e.preventDefault();
       e.stopPropagation();
       this.startDrag('move', e.clientX, e.clientY);
     });
 
+    // Double-click to apply crop
+    this.cropBox.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.applyCrop();
+    });
+
     // Resize handles
     const handles = this.cropBox.querySelectorAll('.crop-handle');
     handles.forEach((h) => {
       h.addEventListener('mousedown', (e) => {
+        if (this.isFramingMode) return;
         e.preventDefault();
         e.stopPropagation();
         this.startDrag(h.dataset.handle, e.clientX, e.clientY);
@@ -103,7 +118,19 @@ export class CropController {
       }
     });
 
-    // Resize listener to re-align crop box when window resizes
+    // Keyboard shortcuts (Enter to apply, Esc to close/deactivate)
+    window.addEventListener('keydown', (e) => {
+      if (!this.isActive || this.isFramingMode) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.applyCrop();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        this.deactivate();
+      }
+    });
+
+    // Window resize listener
     window.addEventListener('resize', () => {
       if (this.isActive) {
         this.refreshMediaBounds();
@@ -113,7 +140,7 @@ export class CropController {
   }
 
   toggle() {
-    if (this.isActive) {
+    if (this.isActive && !this.isFramingMode) {
       this.deactivate();
     } else {
       this.activate();
@@ -122,15 +149,33 @@ export class CropController {
 
   activate() {
     this.isActive = true;
+    this.isFramingMode = false;
     this.overlay.style.display = 'block';
     if (this.controlBar) this.controlBar.style.display = 'flex';
+
+    // Remove applied mode styling so handles and control bar are accessible
+    this.cropBox.classList.remove('applied-mode');
+    [this.scrimTop, this.scrimBottom, this.scrimLeft, this.scrimRight].forEach((s) => {
+      if (s) s.classList.remove('applied-mode');
+    });
+
+    // Ensure media is in fit view so entire boundary is visible
+    if (this.engine.zoomLevel !== 'fit' || this.engine.panX !== 0 || this.engine.panY !== 0) {
+      this.engine.setZoom('fit');
+    }
 
     this.refreshMediaBounds();
 
     if (this.engine.crop) {
+      this.activeRatio = this.engine.crop.ratio || 'free';
+      if (this.controlBar) {
+        this.controlBar.querySelectorAll('.btn-ratio').forEach((b) => {
+          b.classList.toggle('active', b.dataset.ratio === this.activeRatio);
+        });
+      }
       this.repositionBoxFromNormalized(this.engine.crop);
     } else {
-      // Default to 85% centered
+      // Default to 85% centered box within media bounds
       const w = this.mediaBounds.width * 0.85;
       const h = this.mediaBounds.height * 0.85;
       const l = this.mediaBounds.left + (this.mediaBounds.width - w) / 2;
@@ -142,9 +187,31 @@ export class CropController {
   }
 
   deactivate() {
-    this.isActive = false;
-    this.overlay.style.display = 'none';
-    if (this.controlBar) this.controlBar.style.display = 'none';
+    if (this.engine.crop) {
+      // If a crop is actively saved, remain in framing mode so user sees the framed crop
+      this.setFramingMode(true);
+    } else {
+      this.isActive = false;
+      this.isFramingMode = false;
+      this.overlay.style.display = 'none';
+      if (this.controlBar) this.controlBar.style.display = 'none';
+    }
+  }
+
+  setFramingMode(inFraming) {
+    this.isFramingMode = inFraming;
+    if (inFraming) {
+      this.isActive = true;
+      this.overlay.style.display = 'block';
+      if (this.controlBar) this.controlBar.style.display = 'none';
+      this.cropBox.classList.add('applied-mode');
+      [this.scrimTop, this.scrimBottom, this.scrimLeft, this.scrimRight].forEach((s) => {
+        if (s) s.classList.add('applied-mode');
+      });
+      this.repositionBoxFromNormalized();
+    } else {
+      this.activate();
+    }
   }
 
   refreshMediaBounds() {
@@ -154,16 +221,22 @@ export class CropController {
     const tRect = target.getBoundingClientRect();
     const vRect = this.viewport.getBoundingClientRect();
 
+    if (tRect.width <= 0 || tRect.height <= 0 || vRect.width <= 0 || vRect.height <= 0) {
+      return;
+    }
+
+    // Exact pixel coordinates of media relative to viewport container
     this.mediaBounds = {
-      left: Math.max(0, tRect.left - vRect.left),
-      top: Math.max(0, tRect.top - vRect.top),
-      width: Math.min(vRect.width, tRect.width),
-      height: Math.min(vRect.height, tRect.height),
+      left: tRect.left - vRect.left,
+      top: tRect.top - vRect.top,
+      width: tRect.width,
+      height: tRect.height,
     };
   }
 
   repositionBoxFromNormalized(crop = this.engine.crop) {
     if (!crop) return;
+    this.refreshMediaBounds();
     const l = this.mediaBounds.left + crop.x * this.mediaBounds.width;
     const t = this.mediaBounds.top + crop.y * this.mediaBounds.height;
     const w = crop.width * this.mediaBounds.width;
@@ -172,12 +245,14 @@ export class CropController {
   }
 
   setCropBoxRect(rect) {
-    this.cropBoxRect = {
-      left: Math.max(this.mediaBounds.left, Math.min(this.mediaBounds.left + this.mediaBounds.width - rect.width, rect.left)),
-      top: Math.max(this.mediaBounds.top, Math.min(this.mediaBounds.top + this.mediaBounds.height - rect.height, rect.top)),
-      width: Math.max(40, Math.min(this.mediaBounds.width, rect.width)),
-      height: Math.max(40, Math.min(this.mediaBounds.height, rect.height)),
-    };
+    const minSize = 40;
+    const b = this.mediaBounds;
+    const w = Math.max(minSize, Math.min(b.width, rect.width));
+    const h = Math.max(minSize, Math.min(b.height, rect.height));
+    const l = Math.max(b.left, Math.min(b.left + b.width - w, rect.left));
+    const t = Math.max(b.top, Math.min(b.top + b.height - h, rect.top));
+
+    this.cropBoxRect = { left: l, top: t, width: w, height: h };
     this.updateUI();
   }
 
@@ -195,7 +270,6 @@ export class CropController {
     else if (ratioStr === '4:5') targetRatio = 4 / 5;
     else if (ratioStr === '4:3') targetRatio = 4 / 3;
 
-    // Adjust crop box around its center to match targetRatio within media bounds
     const curCenter = {
       x: this.cropBoxRect.left + this.cropBoxRect.width / 2,
       y: this.cropBoxRect.top + this.cropBoxRect.height / 2,
@@ -213,8 +287,8 @@ export class CropController {
       newH = newW / targetRatio;
     }
 
-    let newL = curCenter.x - newW / 2;
-    let newT = curCenter.y - newH / 2;
+    const newL = curCenter.x - newW / 2;
+    const newT = curCenter.y - newH / 2;
 
     this.setCropBoxRect({ left: newL, top: newT, width: newW, height: newH });
   }
@@ -233,66 +307,275 @@ export class CropController {
     const bounds = this.mediaBounds;
 
     if (this.dragMode === 'move') {
-      const newL = Math.max(bounds.left, Math.min(bounds.left + bounds.width - b.width, b.left + dx));
-      const newT = Math.max(bounds.top, Math.min(bounds.top + bounds.height - b.height, b.top + dy));
+      const maxL = bounds.left + bounds.width - b.width;
+      const maxT = bounds.top + bounds.height - b.height;
+      const newL = Math.max(bounds.left, Math.min(maxL, b.left + dx));
+      const newT = Math.max(bounds.top, Math.min(maxT, b.top + dy));
       this.cropBoxRect.left = newL;
       this.cropBoxRect.top = newT;
       this.updateUI();
       return;
     }
 
-    let newL = b.left;
-    let newT = b.top;
-    let newW = b.width;
-    let newH = b.height;
+    const minSize = 40;
+    const r0 = b.left + b.width;
+    const b0 = b.top + b.height;
 
-    // Handle horizontal adjustment
-    if (this.dragMode.includes('e')) {
-      newW = Math.max(40, Math.min(bounds.left + bounds.width - b.left, b.width + dx));
-    } else if (this.dragMode.includes('w')) {
-      const maxW = b.left + b.width - bounds.left;
-      newW = Math.max(40, Math.min(maxW, b.width - dx));
-      newL = b.left + (b.width - newW);
-    }
-
-    // Handle vertical adjustment
-    if (this.dragMode.includes('s')) {
-      newH = Math.max(40, Math.min(bounds.top + bounds.height - b.top, b.height + dy));
-    } else if (this.dragMode.includes('n')) {
-      const maxH = b.top + b.height - bounds.top;
-      newH = Math.max(40, Math.min(maxH, b.height - dy));
-      newT = b.top + (b.height - newH);
-    }
-
-    // Lock aspect ratio if not 'free'
+    let targetRatio = null;
     if (this.activeRatio !== 'free') {
-      let targetRatio = 1;
       if (this.activeRatio === '1:1') targetRatio = 1;
       else if (this.activeRatio === '9:16') targetRatio = 9 / 16;
       else if (this.activeRatio === '16:9') targetRatio = 16 / 9;
       else if (this.activeRatio === '4:5') targetRatio = 4 / 5;
       else if (this.activeRatio === '4:3') targetRatio = 4 / 3;
+    }
 
-      if (this.dragMode === 'e' || this.dragMode === 'w') {
-        newH = newW / targetRatio;
-        if (newT + newH > bounds.top + bounds.height) {
-          newH = bounds.top + bounds.height - newT;
-          newW = newH * targetRatio;
+    let left = b.left;
+    let top = b.top;
+    let width = b.width;
+    let height = b.height;
+
+    // Fixed-anchor resizing logic
+    switch (this.dragMode) {
+      case 'se': {
+        // Anchor: Top-Left (b.left, b.top)
+        const maxW = bounds.left + bounds.width - b.left;
+        const maxH = bounds.top + bounds.height - b.top;
+        let w = Math.max(minSize, Math.min(maxW, b.width + dx));
+        let h = Math.max(minSize, Math.min(maxH, b.height + dy));
+
+        if (targetRatio) {
+          if (Math.abs(dx) > Math.abs(dy)) {
+            h = w / targetRatio;
+            if (h > maxH) {
+              h = maxH;
+              w = h * targetRatio;
+            }
+          } else {
+            w = h * targetRatio;
+            if (w > maxW) {
+              w = maxW;
+              h = w / targetRatio;
+            }
+          }
         }
-      } else {
-        newW = newH * targetRatio;
-        if (newL + newW > bounds.left + bounds.width) {
-          newW = bounds.left + bounds.width - newL;
-          newH = newW / targetRatio;
+        left = b.left;
+        top = b.top;
+        width = Math.max(minSize, w);
+        height = Math.max(minSize, h);
+        break;
+      }
+
+      case 'sw': {
+        // Anchor: Top-Right (r0, b.top)
+        const maxW = r0 - bounds.left;
+        const maxH = bounds.top + bounds.height - b.top;
+        let w = Math.max(minSize, Math.min(maxW, b.width - dx));
+        let h = Math.max(minSize, Math.min(maxH, b.height + dy));
+
+        if (targetRatio) {
+          if (Math.abs(dx) > Math.abs(dy)) {
+            h = w / targetRatio;
+            if (h > maxH) {
+              h = maxH;
+              w = h * targetRatio;
+            }
+          } else {
+            w = h * targetRatio;
+            if (w > maxW) {
+              w = maxW;
+              h = w / targetRatio;
+            }
+          }
         }
+        width = Math.max(minSize, w);
+        height = Math.max(minSize, h);
+        left = r0 - width;
+        top = b.top;
+        break;
+      }
+
+      case 'ne': {
+        // Anchor: Bottom-Left (b.left, b0)
+        const maxW = bounds.left + bounds.width - b.left;
+        const maxH = b0 - bounds.top;
+        let w = Math.max(minSize, Math.min(maxW, b.width + dx));
+        let h = Math.max(minSize, Math.min(maxH, b.height - dy));
+
+        if (targetRatio) {
+          if (Math.abs(dx) > Math.abs(dy)) {
+            h = w / targetRatio;
+            if (h > maxH) {
+              h = maxH;
+              w = h * targetRatio;
+            }
+          } else {
+            w = h * targetRatio;
+            if (w > maxW) {
+              w = maxW;
+              h = w / targetRatio;
+            }
+          }
+        }
+        width = Math.max(minSize, w);
+        height = Math.max(minSize, h);
+        left = b.left;
+        top = b0 - height;
+        break;
+      }
+
+      case 'nw': {
+        // Anchor: Bottom-Right (r0, b0)
+        const maxW = r0 - bounds.left;
+        const maxH = b0 - bounds.top;
+        let w = Math.max(minSize, Math.min(maxW, b.width - dx));
+        let h = Math.max(minSize, Math.min(maxH, b.height - dy));
+
+        if (targetRatio) {
+          if (Math.abs(dx) > Math.abs(dy)) {
+            h = w / targetRatio;
+            if (h > maxH) {
+              h = maxH;
+              w = h * targetRatio;
+            }
+          } else {
+            w = h * targetRatio;
+            if (w > maxW) {
+              w = maxW;
+              h = w / targetRatio;
+            }
+          }
+        }
+        width = Math.max(minSize, w);
+        height = Math.max(minSize, h);
+        left = r0 - width;
+        top = b0 - height;
+        break;
+      }
+
+      case 'e': {
+        // Anchor: Left (b.left)
+        const maxW = bounds.left + bounds.width - b.left;
+        let w = Math.max(minSize, Math.min(maxW, b.width + dx));
+        let h = b.height;
+        let t = b.top;
+
+        if (targetRatio) {
+          h = w / targetRatio;
+          const centerY = b.top + b.height / 2;
+          t = centerY - h / 2;
+          if (t < bounds.top) {
+            t = bounds.top;
+          } else if (t + h > bounds.top + bounds.height) {
+            t = bounds.top + bounds.height - h;
+          }
+          if (h > bounds.height) {
+            h = bounds.height;
+            w = h * targetRatio;
+            t = bounds.top;
+          }
+        }
+        left = b.left;
+        top = t;
+        width = Math.max(minSize, w);
+        height = Math.max(minSize, h);
+        break;
+      }
+
+      case 'w': {
+        // Anchor: Right (r0)
+        const maxW = r0 - bounds.left;
+        let w = Math.max(minSize, Math.min(maxW, b.width - dx));
+        let h = b.height;
+        let t = b.top;
+
+        if (targetRatio) {
+          h = w / targetRatio;
+          const centerY = b.top + b.height / 2;
+          t = centerY - h / 2;
+          if (t < bounds.top) {
+            t = bounds.top;
+          } else if (t + h > bounds.top + bounds.height) {
+            t = bounds.top + bounds.height - h;
+          }
+          if (h > bounds.height) {
+            h = bounds.height;
+            w = h * targetRatio;
+            t = bounds.top;
+          }
+        }
+        width = Math.max(minSize, w);
+        height = Math.max(minSize, h);
+        left = r0 - width;
+        top = t;
+        break;
+      }
+
+      case 's': {
+        // Anchor: Top (b.top)
+        const maxH = bounds.top + bounds.height - b.top;
+        let h = Math.max(minSize, Math.min(maxH, b.height + dy));
+        let w = b.width;
+        let l = b.left;
+
+        if (targetRatio) {
+          w = h * targetRatio;
+          const centerX = b.left + b.width / 2;
+          l = centerX - w / 2;
+          if (l < bounds.left) {
+            l = bounds.left;
+          } else if (l + w > bounds.left + bounds.width) {
+            l = bounds.left + bounds.width - w;
+          }
+          if (w > bounds.width) {
+            w = bounds.width;
+            h = w / targetRatio;
+            l = bounds.left;
+          }
+        }
+        left = l;
+        top = b.top;
+        width = Math.max(minSize, w);
+        height = Math.max(minSize, h);
+        break;
+      }
+
+      case 'n': {
+        // Anchor: Bottom (b0)
+        const maxH = b0 - bounds.top;
+        let h = Math.max(minSize, Math.min(maxH, b.height - dy));
+        let w = b.width;
+        let l = b.left;
+
+        if (targetRatio) {
+          w = h * targetRatio;
+          const centerX = b.left + b.width / 2;
+          l = centerX - w / 2;
+          if (l < bounds.left) {
+            l = bounds.left;
+          } else if (l + w > bounds.left + bounds.width) {
+            l = bounds.left + bounds.width - w;
+          }
+          if (w > bounds.width) {
+            w = bounds.width;
+            h = w / targetRatio;
+            l = bounds.left;
+          }
+        }
+        width = Math.max(minSize, w);
+        height = Math.max(minSize, h);
+        left = l;
+        top = b0 - height;
+        break;
       }
     }
 
+    // Final boundary clamp
     this.cropBoxRect = {
-      left: Math.max(bounds.left, Math.min(bounds.left + bounds.width - 40, newL)),
-      top: Math.max(bounds.top, Math.min(bounds.top + bounds.height - 40, newT)),
-      width: Math.max(40, Math.min(bounds.width, newW)),
-      height: Math.max(40, Math.min(bounds.height, newH)),
+      left: Math.max(bounds.left, Math.min(bounds.left + bounds.width - minSize, left)),
+      top: Math.max(bounds.top, Math.min(bounds.top + bounds.height - minSize, top)),
+      width: Math.max(minSize, Math.min(bounds.width, width)),
+      height: Math.max(minSize, Math.min(bounds.height, height)),
     };
 
     this.updateUI();
@@ -301,10 +584,13 @@ export class CropController {
   getNormalizedCrop() {
     if (this.mediaBounds.width <= 0 || this.mediaBounds.height <= 0) return null;
 
-    const normX = Math.max(0, (this.cropBoxRect.left - this.mediaBounds.left) / this.mediaBounds.width);
-    const normY = Math.max(0, (this.cropBoxRect.top - this.mediaBounds.top) / this.mediaBounds.height);
-    const normW = Math.min(1 - normX, this.cropBoxRect.width / this.mediaBounds.width);
-    const normH = Math.min(1 - normY, this.cropBoxRect.height / this.mediaBounds.height);
+    const relX = this.cropBoxRect.left - this.mediaBounds.left;
+    const relY = this.cropBoxRect.top - this.mediaBounds.top;
+
+    const normX = Math.max(0.0, Math.min(1.0, relX / this.mediaBounds.width));
+    const normY = Math.max(0.0, Math.min(1.0, relY / this.mediaBounds.height));
+    const normW = Math.max(0.01, Math.min(1.0 - normX, this.cropBoxRect.width / this.mediaBounds.width));
+    const normH = Math.max(0.01, Math.min(1.0 - normY, this.cropBoxRect.height / this.mediaBounds.height));
 
     return {
       x: normX,
@@ -323,14 +609,17 @@ export class CropController {
       this.showToast(`Applied Crop: ${dims.width} × ${dims.height} (${this.activeRatio.toUpperCase()})`);
       if (this.onCropChange) this.onCropChange(crop);
     }
-    this.deactivate();
+    this.setFramingMode(true);
   }
 
   clearCrop() {
     this.engine.clearCrop();
     this.showToast('Crop cleared: Full frame restored');
     if (this.onCropChange) this.onCropChange(null);
-    this.deactivate();
+    this.isActive = false;
+    this.isFramingMode = false;
+    this.overlay.style.display = 'none';
+    if (this.controlBar) this.controlBar.style.display = 'none';
   }
 
   updateUI() {
@@ -361,7 +650,7 @@ export class CropController {
     }
 
     // Dimension readout in native pixels
-    if (this.dimsBadge) {
+    if (this.dimsBadge && !this.isFramingMode) {
       const rotDims = this.engine.getRotatedDimensions();
       const normW = this.mediaBounds.width > 0 ? r.width / this.mediaBounds.width : 1;
       const normH = this.mediaBounds.height > 0 ? r.height / this.mediaBounds.height : 1;
@@ -372,4 +661,3 @@ export class CropController {
     }
   }
 }
-

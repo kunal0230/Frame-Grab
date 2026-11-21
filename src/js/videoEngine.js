@@ -398,25 +398,33 @@ export class VideoEngine {
   // ==========================================
   rotateCW() {
     this.rotation = (this.rotation + 90) % 360;
+    this.crop = null;
     this.applyTransform();
+    this.emit('cropchange', null);
     this.emit('transformchange', this.getTransformState());
   }
 
   rotateCCW() {
     this.rotation = (this.rotation - 90 + 360) % 360;
+    this.crop = null;
     this.applyTransform();
+    this.emit('cropchange', null);
     this.emit('transformchange', this.getTransformState());
   }
 
   toggleFlipH() {
     this.flipH = !this.flipH;
+    this.crop = null;
     this.applyTransform();
+    this.emit('cropchange', null);
     this.emit('transformchange', this.getTransformState());
   }
 
   toggleFlipV() {
     this.flipV = !this.flipV;
+    this.crop = null;
     this.applyTransform();
+    this.emit('cropchange', null);
     this.emit('transformchange', this.getTransformState());
   }
 
@@ -424,7 +432,9 @@ export class VideoEngine {
     this.rotation = 0;
     this.flipH = false;
     this.flipV = false;
+    this.crop = null;
     this.applyTransform();
+    this.emit('cropchange', null);
     this.emit('transformchange', this.getTransformState());
   }
 

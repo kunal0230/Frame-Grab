@@ -549,6 +549,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  engine.on('cropchange', (crop) => {
+    if (!crop && (cropController.isActive || cropController.isFramingMode)) {
+      cropController.clearCrop();
+    }
+  });
+
   engine.on('transformchange', () => {
     updateResolutionDisplay();
     if (btnResetRotate) {

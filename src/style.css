@@ -829,6 +829,23 @@ html, body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
+/* Framing Mode (When crop is actively applied and control bar is closed) */
+.crop-box.applied-mode {
+  border: 2px dashed rgba(0, 240, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 240, 255, 0.25);
+  cursor: pointer;
+}
+
+.crop-box.applied-mode .crop-handle,
+.crop-box.applied-mode .crop-grid-line,
+.crop-box.applied-mode .crop-dims-badge {
+  display: none !important;
+}
+
+.crop-scrim.applied-mode {
+  background: rgba(0, 0, 0, 0.55);
+}
+
 /* Floating Crop Control Bar */
 .crop-control-bar {
   position: absolute;
